@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Agent Runtime — Unified Hook Handler
+ * Agent Runtime — Unified Hook Handler (ESM)
  *
  * This script is the single entry point for all agent hooks.
  * It reads stdin JSON, processes events through the policy engine,
@@ -12,143 +12,146 @@
  *   Stop:        node .harness/hooks/handler.mjs stop
  */
 
-import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Resolve hannah-agent-runtime ──────────────────────────────────────────
 // Try local project install first, then global
 
-let runtime;
-try {
-  runtime = require("hannah-agent-runtime");
-} catch {
-  // Try resolving from the project root
-  const projectRoot = findProjectRoot();
-  if (projectRoot) {
-    try {
-      runtime = require(path.join(projectRoot, "node_modules", "hannah-agent-runtime"));
-    } catch {
-      console.error(
-        "hannah-agent-runtime not found. Install it: npm install -D hannah-agent-runtime"
-      );
-      process.exit(1);
-    }
-  } else {
-    console.error("hannah-agent-runtime not found. Install it: npm install -D hannah-agent-runtime");
-    process.exit(1);
-  }
-}
-
 function findProjectRoot() {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  // .harness/hooks/handler.mjs → project root is 3 levels up
-  return path.resolve(dir, "..", "..");
+  // .harness/hooks/handler.mjs → project root is 2 levels up
+  return path.resolve(__dirname, "..", "..");
 }
 
-function fileURLToPath(url) {
-  if (typeof url === "string") return url;
-  return url.pathname;
+async function loadRuntime() {
+  const projectRoot = findProjectRoot();
+  
+  // Try local project install first
+  try {
+    const localPath = path.join(projectRoot, "node_modules", "hannah-agent-runtime", "dist", "index.js");
+    if (fs.existsSync(localPath)) {
+      return await import(pathToFileURL(localPath).href);
+    }
+  } catch {}
+  
+  // Try global install
+  try {
+    return await import("hannah-agent-runtime");
+  } catch {}
+  
+  console.error("hannah-agent-runtime not found. Install it: npm install -D hannah-agent-runtime");
+  process.exit(1);
 }
 
 // ─── Load Config & Policies ─────────────────────────────────────────
 
-const projectRoot = findProjectRoot();
-const harnessDir = path.join(projectRoot, ".harness");
-const configPath = path.join(harnessDir, "config.yaml");
-
-let config;
-try {
-  const { loadHarnessConfig, loadPoliciesFromDir } = require(path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "node_modules",
-    "hannah-agent-runtime",
-    "dist",
-    "cli",
-    "yaml-loader.js"
-  )) || runtime;
-
-  // Try to load config
-  if (fs.existsSync(configPath)) {
-    const yamlContent = fs.readFileSync(configPath, "utf-8");
-    const yaml = require("js-yaml");
-    config = yaml.load(yamlContent);
-  }
-} catch {
-  // Use defaults if config loading fails
-  config = {
+async function loadConfig() {
+  const projectRoot = findProjectRoot();
+  const harnessDir = path.join(projectRoot, ".harness");
+  const configPath = path.join(harnessDir, "config.yaml");
+  
+  let config = {
     trace: { enabled: true, dir: ".harness/traces" },
     policies: ["policies"],
   };
-}
-
-// ─── Setup Runtime ──────────────────────────────────────────────────
-
-const agentRuntime = new runtime.AgentRuntime({ debug: false });
-
-// Load policies from .harness/policies/
-const policiesDir = path.join(harnessDir, "policies");
-if (fs.existsSync(policiesDir)) {
+  
   try {
-    const { loadPoliciesFromDir } = runtime;
-    if (typeof loadPoliciesFromDir === "function") {
-      const policies = loadPoliciesFromDir(policiesDir);
-      policies.forEach((p) => agentRuntime.loadPolicy(p));
+    // Try to load js-yaml for config parsing
+    let yaml;
+    try {
+      yaml = await import("js-yaml");
+    } catch {
+      // js-yaml not available, use default config
+      return config;
+    }
+    
+    if (fs.existsSync(configPath)) {
+      const yamlContent = fs.readFileSync(configPath, "utf-8");
+      config = yaml.load(yamlContent);
     }
   } catch {
-    // Fallback: load built-in policies
-    const { allPolicies } = runtime;
-    if (allPolicies) {
-      allPolicies.forEach((p) => agentRuntime.loadPolicy(p));
+    // Use defaults if config loading fails
+  }
+  
+  return config;
+}
+
+// ─── Main Setup ─────────────────────────────────────────────────────
+
+async function setup() {
+  const runtime = await loadRuntime();
+  const config = await loadConfig();
+  
+  const projectRoot = findProjectRoot();
+  const harnessDir = path.join(projectRoot, ".harness");
+  
+  // Setup Runtime
+  const agentRuntime = new runtime.AgentRuntime({ debug: false });
+  
+  // Load policies from .harness/policies/
+  const policiesDir = path.join(harnessDir, "policies");
+  if (fs.existsSync(policiesDir)) {
+    try {
+      if (typeof runtime.loadPoliciesFromDir === "function") {
+        const policies = runtime.loadPoliciesFromDir(policiesDir);
+        policies.forEach((p) => agentRuntime.loadPolicy(p));
+      }
+    } catch {
+      // Fallback: load built-in policies
+      if (runtime.allPolicies) {
+        runtime.allPolicies.forEach((p) => agentRuntime.loadPolicy(p));
+      }
     }
   }
-}
-
-// Create adapter based on config
-const adapterName = config?.adapters?.[0] || "claude-code";
-const adapterMap = {
-  "claude-code": runtime.ClaudeCodeAdapter,
-  "qoder": runtime.QoderAdapter,
-  "codex": runtime.CodexAdapter,
-  "copilot": runtime.CopilotAdapter,
-  "trae": runtime.TraeAdapter,
-};
-
-const AdapterClass = adapterMap[adapterName];
-if (!AdapterClass) {
-  console.error("Unknown adapter: " + adapterName);
-  process.exit(1);
-}
-
-const adapter = new AdapterClass();
-adapter.attachRuntime(agentRuntime);
-
-// ─── Trace Writer ───────────────────────────────────────────────────
-
-const traceEnabled = config?.trace?.enabled !== false;
-const traceDir = path.join(projectRoot, config?.trace?.dir || ".harness/traces");
-
-function writeTrace(event, result) {
-  if (!traceEnabled) return;
-  try {
-    fs.mkdirSync(traceDir, { recursive: true });
-    const date = new Date().toISOString().slice(0, 10);
-    const traceFile = path.join(traceDir, date + ".jsonl");
-    const entry = {
-      timestamp: new Date().toISOString(),
-      event: event.name,
-      source: event.source,
-      action: result?.finalAction || "unknown",
-      payload: event.payload,
-      feedback: result?.feedbackMessages || [],
-    };
-    fs.appendFileSync(traceFile, JSON.stringify(entry) + "\n");
-  } catch {
-    // Silently ignore trace write errors
+  
+  // Create adapter based on config
+  const adapterName = config?.adapters?.[0] || "claude-code";
+  const adapterMap = {
+    "claude-code": runtime.ClaudeCodeAdapter,
+    "qoder": runtime.QoderAdapter,
+    "codex": runtime.CodexAdapter,
+    "copilot": runtime.CopilotAdapter,
+    "trae": runtime.TraeAdapter,
+  };
+  
+  const AdapterClass = adapterMap[adapterName];
+  if (!AdapterClass) {
+    console.error("Unknown adapter: " + adapterName);
+    process.exit(1);
   }
+  
+  const adapter = new AdapterClass();
+  adapter.attachRuntime(agentRuntime);
+  
+  // Trace Writer
+  const traceEnabled = config?.trace?.enabled !== false;
+  const traceDir = path.join(projectRoot, config?.trace?.dir || ".harness/traces");
+  
+  function writeTrace(event, result) {
+    if (!traceEnabled) return;
+    try {
+      fs.mkdirSync(traceDir, { recursive: true });
+      const date = new Date().toISOString().slice(0, 10);
+      const traceFile = path.join(traceDir, date + ".jsonl");
+      const entry = {
+        timestamp: new Date().toISOString(),
+        event: event.name,
+        source: event.source,
+        action: result?.finalAction || "unknown",
+        payload: event.payload,
+        feedback: result?.feedbackMessages || [],
+      };
+      fs.appendFileSync(traceFile, JSON.stringify(entry) + "\n");
+    } catch {
+      // Silently ignore trace write errors
+    }
+  }
+  
+  return { runtime, adapter, adapterName, writeTrace, traceEnabled };
 }
 
 // ─── Hook Processing ────────────────────────────────────────────────
@@ -167,7 +170,7 @@ async function readStdin() {
         }
       }
     }, 1000);
-
+    
     process.stdin.on("data", (c) => chunks.push(c));
     process.stdin.on("end", () => {
       clearTimeout(timer);
@@ -190,7 +193,10 @@ async function main() {
     console.error("Usage: handler.mjs <pre-tool-use|post-tool-use|stop>");
     process.exit(1);
   }
-
+  
+  // Setup runtime and adapter
+  const { adapter, adapterName, writeTrace, traceEnabled } = await setup();
+  
   let input;
   try {
     input = await readStdin();
@@ -198,14 +204,13 @@ async function main() {
     // No stdin or parse error — allow by default
     process.exit(0);
   }
-
+  
   // Process through adapter
   let output;
   switch (mode) {
     case "pre-tool-use":
       output = await adapter.handlePreToolUse(input);
       // Write traces for all events
-      // (The adapter internally processes events; we trace the final decision)
       if (traceEnabled) {
         writeTrace(
           {
@@ -220,7 +225,7 @@ async function main() {
       process.stdout.write(JSON.stringify(output));
       process.exit(output.decision === "deny" ? 2 : 0);
       break;
-
+      
     case "post-tool-use":
       await adapter.handlePostToolUse(input);
       if (traceEnabled) {
@@ -235,13 +240,13 @@ async function main() {
       }
       process.exit(0);
       break;
-
+      
     case "stop":
       output = await adapter.handleStop(input);
       process.stdout.write(JSON.stringify(output));
       process.exit(output.decision === "deny" ? 2 : 0);
       break;
-
+      
     default:
       console.error("Unknown mode: " + mode);
       process.exit(1);
