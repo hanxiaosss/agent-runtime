@@ -1,2 +1,5 @@
 {"timestamp":"2026-08-26T15:21:47.333Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"write_file","input":{"file_path":"test.txt","content":"hello"}},"feedback":[]}
 {"timestamp":"2026-08-26T15:22:21.219Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"read_file","input":{"file_path":"config.yaml"}},"feedback":[]}
+{"timestamp":"2026-08-26T16:47:56.568Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"write","input":{"file_path":"agent.md","content":"# Modified by AI"}},"feedback":[]}
+{"timestamp":"2026-08-26T16:48:15.134Z","event":"tool.before","source":"copilot","action":"deny","payload":{"toolName":"write","input":{"file_path":"agent.md","content":"# Modified by AI"}},"feedback":["Redline file modification blocked"]}
+{"timestamp":"2026-08-26T16:48:30.092Z","event":"tool.before","source":"copilot","action":"deny","payload":{"toolName":"write","input":{"file_path":"agent.md","content":"# Modified by AI"}},"feedback":["Redline file modification blocked"]}

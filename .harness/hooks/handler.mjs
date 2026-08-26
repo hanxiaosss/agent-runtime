@@ -63,6 +63,16 @@ async function loadRuntime() {
   const projectRoot = findProjectRoot();
   debug("Project root:", projectRoot);
   
+  // Try environment variable first (for testing)
+  if (process.env.HANNAH_RUNTIME_PATH) {
+    try {
+      debug("Loading from env HANNAH_RUNTIME_PATH:", process.env.HANNAH_RUNTIME_PATH);
+      return await import(pathToFileURL(process.env.HANNAH_RUNTIME_PATH).href);
+    } catch (err) {
+      debug("Failed to load from env:", err.message);
+    }
+  }
+  
   // Try local project install first
   try {
     const localPath = path.join(projectRoot, "node_modules", "hannah-agent-runtime", "dist", "index.js");
@@ -173,6 +183,19 @@ async function setup() {
   adapter.attachRuntime(agentRuntime);
   debug("Using adapter:", adapterName);
   
+  // ─── Load Semantic Hook Engine ──────────────────────────────────────
+  let semanticEngine = null;
+  try {
+    if (typeof runtime.createSemanticEngine === "function") {
+      semanticEngine = await runtime.createSemanticEngine(projectRoot);
+      const hooks = semanticEngine.getHooks();
+      log("Loaded semantic hook engine with", hooks.length, "hooks");
+      debug("Semantic hooks:", hooks.map(h => h.name).join(", "));
+    }
+  } catch (err) {
+    debug("Failed to load semantic hook engine:", err.message);
+  }
+  
   // Trace Writer
   const traceEnabled = config?.trace?.enabled !== false;
   const traceDir = path.join(projectRoot, config?.trace?.dir || ".harness/traces");
@@ -199,7 +222,7 @@ async function setup() {
   }
   
   log("Setup complete. Adapter:", adapterName);
-  return { runtime, adapter, adapterName, writeTrace, traceEnabled };
+  return { runtime, adapter, adapterName, writeTrace, traceEnabled, semanticEngine, projectRoot };
 }
 
 // ─── Hook Processing ────────────────────────────────────────────────
@@ -245,7 +268,7 @@ async function main() {
   log("Hook triggered:", mode);
   
   // Setup runtime and adapter
-  const { adapter, adapterName, writeTrace, traceEnabled } = await setup();
+  const { adapter, adapterName, writeTrace, traceEnabled, semanticEngine, projectRoot } = await setup();
   
   let input;
   try {
@@ -258,6 +281,81 @@ async function main() {
     process.exit(0);
   }
   
+  // ─── Execute Semantic Hooks First (CRITICAL) ────────────────────────
+  if (semanticEngine && mode === "pre-tool-use") {
+    try {
+      // Build semantic context
+      const filePath = input.tool_input?.file_path || input.tool_input?.path || "";
+      const content = input.tool_input?.content || "";
+      
+      const semanticContext = {
+        event: {
+          name: "tool.before",
+          payload: {
+            toolName: input.tool_name,
+            input: input.tool_input,
+          },
+        },
+        code: filePath ? {
+          filePath,
+          fileType: path.extname(filePath).slice(1),
+          content,
+        } : undefined,
+        project: {
+          root: projectRoot,
+          name: path.basename(projectRoot),
+          techStack: [],
+        },
+      };
+      
+      debug("Executing semantic hooks...");
+      const semanticDecisions = await semanticEngine.evaluate(semanticContext);
+      
+      if (semanticDecisions.length > 0) {
+        // Find the most restrictive decision
+        const priority = { deny: 0, modify: 1, warn: 2, allow: 3 };
+        const mostRestrictive = semanticDecisions.reduce((most, current) => {
+          return priority[current.action] < priority[most.action] ? current : most;
+        });
+        
+        log("Semantic hook decision:", mostRestrictive.action, "-", mostRestrictive.reason);
+        
+        // If denied by semantic hook, return immediately
+        if (mostRestrictive.action === "deny") {
+          const output = {
+            decision: "deny",
+            reason: mostRestrictive.reason,
+            feedback: mostRestrictive.feedback,
+          };
+          
+          // Write trace
+          if (traceEnabled) {
+            writeTrace(
+              {
+                name: "tool.before",
+                source: adapterName,
+                payload: { toolName: input.tool_name, input: input.tool_input },
+              },
+              { finalAction: "deny", feedbackMessages: [mostRestrictive.reason] }
+            );
+          }
+          
+          process.stdout.write(JSON.stringify(output));
+          process.exit(2);
+        }
+        
+        // If warn, log it but continue
+        if (mostRestrictive.action === "warn") {
+          log("Semantic hook warning:", mostRestrictive.feedback);
+        }
+      }
+    } catch (err) {
+      debug("Semantic hook execution failed:", err.message);
+      // Continue with traditional policy even if semantic hooks fail
+    }
+  }
+  
+  // ─── Execute Traditional Policy ─────────────────────────────────────
   // Process through adapter
   let output;
   switch (mode) {
