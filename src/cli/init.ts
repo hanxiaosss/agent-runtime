@@ -749,15 +749,8 @@ export function runInit(args: string[]): void {
       process.exit(1);
     }
   } else {
-    // Interactive mode
-    const readline = require("readline");
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    // Since we can't do async in this sync function, use default
-    // In a real implementation, we'd make this async
+    // Interactive mode - not implemented yet, use default
+    // TODO: Implement interactive selection with readline or inquirer
     selectedAgent = AGENTS[0]; // Default to Claude Code
     console.log(`\n✓ Selected: ${selectedAgent.name} (default)`);
     console.log("  Tip: Use --agent=<name> to select a specific agent");
