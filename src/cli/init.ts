@@ -1059,11 +1059,51 @@ export async function runInit(args: string[]): Promise<void> {
   selectedAgent.generateConfig(targetDir);
   console.log(`  ✓ ${selectedAgent.configPath}`);
 
+  // Initialize semantic hooks
+  console.log("\n  ✓ Scanning project for semantic rules...");
+  try {
+    const { createSemanticEngine } = await import("../semantic/engine.js");
+    const engine = await createSemanticEngine(targetDir);
+    const hooks = engine.getHooks();
+    const techStackHooks = engine.getHooksBySource('tech-stack');
+    const agentMdHooks = engine.getHooksBySource('agent-md');
+    
+    console.log(`  ✓ Generated ${hooks.length} semantic hooks`);
+    if (techStackHooks.length > 0) {
+      console.log(`    ├─ ${techStackHooks.length} tech stack hooks`);
+    }
+    if (agentMdHooks.length > 0) {
+      console.log(`    └─ ${agentMdHooks.length} agent.md hooks`);
+    }
+    
+    // Create semantic-hooks directory and save metadata
+    const semanticDir = path.join(harnessDir, "semantic-hooks");
+    if (!fs.existsSync(semanticDir)) {
+      fs.mkdirSync(semanticDir, { recursive: true });
+    }
+    
+    const hooksMetadata = hooks.map(h => ({
+      name: h.name,
+      description: h.description,
+      version: h.version,
+      source: h.source,
+    }));
+    
+    fs.writeFileSync(
+      path.join(semanticDir, "hooks.json"),
+      JSON.stringify(hooksMetadata, null, 2)
+    );
+    console.log(`  ✓ Saved hooks metadata to .harness/semantic-hooks/hooks.json`);
+  } catch (err: any) {
+    console.log(`  ⚠ Semantic hook initialization skipped: ${err.message}`);
+  }
+
   console.log("");
   console.log("Done! Next steps:");
   console.log("");
   console.log("  1. Install hannah-agent-runtime:  npm install -D hannah-agent-runtime");
   console.log(`  2. Agent configuration generated: ${selectedAgent.configPath}`);
-  console.log("  3. View traces:                   hannah trace");
+  console.log("  3. Sync semantic hooks:           hannah sync");
+  console.log("  4. View traces:                   hannah trace");
   console.log("");
 }

@@ -108,3 +108,30 @@ export {
   loadHarnessConfig,
   type HarnessConfig,
 } from "./cli/index.js";
+
+// Semantic Hook System
+export {
+  // Types
+  type SemanticContext,
+  type SemanticMatch,
+  type SemanticDecision,
+  type SemanticHook,
+  type ExtractedRule,
+  type TechStack,
+  type SemanticHookConfig,
+  // Engine
+  SemanticHookEngine,
+  createSemanticEngine,
+  buildSemanticContext,
+  // Generator
+  generateHookFromRule,
+  generateTechStackHooks,
+  saveHooksToFile,
+  // Detectors
+  detectTechStack,
+  getPresetHooks,
+  // Scanner
+  findAgentFiles,
+  extractRules,
+  scanProjectRules,
+} from "./semantic/index.js";

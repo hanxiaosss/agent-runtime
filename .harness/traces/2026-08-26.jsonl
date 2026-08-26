@@ -1,0 +1,2 @@
+{"timestamp":"2026-08-26T15:21:47.333Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"write_file","input":{"file_path":"test.txt","content":"hello"}},"feedback":[]}
+{"timestamp":"2026-08-26T15:22:21.219Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"read_file","input":{"file_path":"config.yaml"}},"feedback":[]}

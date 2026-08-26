@@ -4,11 +4,13 @@
  *
  * Commands:
  *   init       — Generate .harness/ directory in the current project
+ *   sync       — Synchronize semantic hooks with project rules
  *   trace      — View agent runtime traces
  *   summary    — Show aggregate statistics
  *
  * Usage:
  *   hannah init
+ *   hannah sync
  *   hannah trace
  *   hannah trace --follow
  *   hannah summary
@@ -16,6 +18,7 @@
  */
 
 import { runInit } from "./cli/init.js";
+import { runSync } from "./cli/sync.js";
 import { runTrace } from "./cli/trace.js";
 import { runSummary } from "./cli/summary.js";
 
@@ -32,6 +35,7 @@ function printHelp(): void {
   Commands:
     init [dir] [options]    Generate .harness/ directory (default: cwd)
       --agent=<name>          Select agent: claude-code, copilot, qoder, codex, trae
+    sync [dir]              Synchronize semantic hooks with project rules
     trace [options]         View agent runtime traces
       --all                   Show all entries (default: last 50)
       --follow                Follow traces in real-time
@@ -46,6 +50,7 @@ function printHelp(): void {
     hannah init
     hannah init --agent=copilot
     hannah init ./my-project --agent=claude-code
+    hannah sync
     hannah trace --follow
     hannah summary --today
 `);
@@ -54,6 +59,13 @@ function printHelp(): void {
 switch (command) {
   case "init":
     runInit(args.slice(1)).catch((err) => {
+      console.error("Error:", err.message);
+      process.exit(1);
+    });
+    break;
+
+  case "sync":
+    runSync(args.slice(1)).catch((err) => {
       console.error("Error:", err.message);
       process.exit(1);
     });

@@ -1,10 +1,20 @@
-# Agent Runtime
+# Hannah Agent Runtime
 
-> **A cross-hannah unified event and policy layer for observing, constraining, and providing feedback on AI agent behavior.**
+> **A cross-agent unified event and policy layer for observing, constraining, and providing feedback on AI agent behavior.**
 
 ## Overview
 
-Agent Runtime provides a unified control plane for AI coding agents (Claude Code, Codex, Qoder, Copilot, Trae). It intercepts agent actions through a standardized hook system, applies declarative policies, and generates observable traces.
+Hannah Agent Runtime provides a unified control plane for AI coding agents (Claude Code, Codex, Qoder, Copilot, Trae). It intercepts agent actions through a standardized hook system, applies declarative policies, and generates observable traces.
+
+### Key Features
+
+- **Universal Event Taxonomy**: 19 canonical event types across 9 categories
+- **5 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae
+- **Declarative Policies**: YAML-based security rules
+- **Semantic Hook System**: Project-level rules extracted from agent.md
+- **Tech Stack Detection**: Automatic hook generation based on your stack
+- **Observable Traces**: JSONL logs with timeline and summary views
+- **Capability Matrix**: Honest reporting of native/emulated/unsupported events per runtime
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -28,9 +38,11 @@ Agent Runtime provides a unified control plane for AI coding agents (Claude Code
 
 ## Features
 
-- **Universal Event Taxonomy**: 17 canonical event types (tool.before, code.before_modify, mcp.before, etc.)
+- **Universal Event Taxonomy**: 19 canonical event types (tool.before, code.before_modify, mcp.before, etc.)
 - **5 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae
 - **Declarative Policies**: YAML-based security rules
+- **Semantic Hook System**: Project-level rules extracted from agent.md
+- **Tech Stack Detection**: Automatic hook generation based on your stack
 - **Observable Traces**: JSONL logs with timeline and summary views
 - **Capability Matrix**: Honest reporting of native/emulated/unsupported events per runtime
 
@@ -39,7 +51,7 @@ Agent Runtime provides a unified control plane for AI coding agents (Claude Code
 ### Installation
 
 ```bash
-npm install -g hannah-hannah
+npm install -g hannah-agent-runtime
 ```
 
 ### Initialize Project
@@ -49,24 +61,19 @@ cd your-project
 hannah init
 ```
 
-This generates `.harness/` with policies, hooks, and configuration.
+This will:
+1. Create `.harness/` directory with policies and hooks
+2. Detect your project's tech stack (React, Vue, Node.js, etc.)
+3. Scan for agent instruction files (agent.md, CLAUDE.md, etc.)
+4. Generate semantic hooks based on your project rules
+5. Generate agent-specific configuration
 
-### Configure Agent
+### Select Agent
 
-Add hooks to your agent's settings (see `.harness/README.md` for details):
+During initialization, select your AI agent interactively or specify directly:
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node .harness/hooks/handler.mjs pre-tool-use"
-      }]
-    }]
-  }
-}
+```bash
+hannah init --agent=copilot
 ```
 
 ### View Traces
@@ -80,6 +87,14 @@ hannah trace --follow
 
 # Statistics summary
 hannah summary
+```
+
+### Sync Semantic Hooks
+
+After modifying agent.md or project dependencies:
+
+```bash
+hannah sync
 ```
 
 ## Example Output
@@ -115,6 +130,66 @@ Bash               8
 Edit               5
 mcp__filesystem__read  3
 ```
+
+## Semantic Hook System
+
+Hannah goes beyond simple event matching with **semantic-level hooks** that understand your project context.
+
+### How It Works
+
+1. **Tech Stack Detection**
+   - Analyzes package.json and project structure
+   - Detects frameworks (React, Vue, Next.js, etc.)
+   - Detects databases (Prisma, MongoDB, etc.)
+   - Generates preset hooks based on your stack
+
+2. **Agent.md Scanning**
+   - Scans agent.md, CLAUDE.md, .cursorrules, etc.
+   - Extracts red-line rules and constraints
+   - Converts natural language rules to semantic hooks
+
+3. **Automatic Hook Generation**
+   - Creates semantic hooks from your rules
+   - Saves hook metadata to `.harness/semantic-hooks/`
+   - Hooks are automatically applied during agent execution
+
+### Supported Agent Instruction Files
+
+- `agent.md` / `AGENT.md`
+- `CLAUDE.md` / `.claude/CLAUDE.md`
+- `COPILOT.md` / `.github/COPILOT.md`
+- `.cursorrules`
+- `.cursor/rules.md`
+
+### Example: Agent.md Rules
+
+```markdown
+# Project Rules
+
+## Security
+- Don't commit .env files or secrets
+- Never use eval() or innerHTML with user input
+
+## Database
+- Don't drop tables or delete all records
+- Always backup before migration
+
+## Architecture
+- Don't modify production configuration directly
+```
+
+Hannah automatically extracts these rules and creates semantic hooks.
+
+### Built-in Semantic Hooks
+
+| Hook | Description | Tech Stack |
+|------|-------------|------------|
+| `database-protection` | Prevent dangerous DB operations | Any with database |
+| `react-security` | Prevent insecure React patterns | React, Next.js |
+| `vue-security` | Prevent insecure Vue patterns | Vue |
+| `environment-protection` | Protect .env files | All |
+| `secret-detection` | Detect hardcoded secrets | All |
+| `production-protection` | Protect production configs | All |
 
 ## Architecture
 
@@ -236,9 +311,34 @@ rules:
 
 ## CLI Commands
 
-### `hannah init [dir]`
+### `hannah init [dir] [options]`
 
-Generate `.harness/` directory with policies and hooks.
+Generate `.harness/` directory with policies, hooks, and semantic hooks.
+
+Options:
+- `--agent=<name>` - Select agent directly (claude-code, copilot, qoder, codex, trae)
+
+What it does:
+- Creates `.harness/` directory structure
+- Generates default policies (protected files, MCP safety, git safety)
+- Detects tech stack and generates semantic hooks
+- Scans agent.md and extracts rules
+- Generates agent-specific hook configuration
+
+### `hannah sync [dir]`
+
+Synchronize semantic hooks with project rules.
+
+What it does:
+- Re-scans agent.md for rule changes
+- Re-detects tech stack
+- Updates semantic hooks
+- Saves hook metadata
+
+When to use:
+- After modifying agent.md
+- After changing project dependencies
+- Periodically to keep hooks up-to-date
 
 ### `hannah trace [options]`
 
@@ -268,6 +368,12 @@ hannah/
 │   │   ├── hook.ts        # Hook interface & pipeline
 │   │   ├── policy.ts      # Policy engine
 │   │   └── runtime.ts     # Runtime engine
+│   ├── semantic/          # Semantic hook system
+│   │   ├── types.ts       # Semantic hook types
+│   │   ├── engine.ts      # Semantic hook engine
+│   │   ├── hook-generator.ts    # Hook generation
+│   │   ├── tech-stack-detector.ts # Tech stack detection
+│   │   └── agent-md-scanner.ts  # Agent.md scanning
 │   ├── adapters/          # Runtime adapters
 │   │   ├── base-adapter.ts
 │   │   ├── claude-code.ts
@@ -278,12 +384,18 @@ hannah/
 │   ├── policies/          # Built-in policies
 │   ├── cli/               # CLI commands
 │   │   ├── init.ts
+│   │   ├── sync.ts
 │   │   ├── trace.ts
 │   │   ├── summary.ts
 │   │   └── yaml-loader.ts
 │   ├── bin.ts             # CLI entry point
 │   └── index.ts           # Public API
 ├── doc/
+│   ├── architecture/      # Architecture design docs
+│   │   ├── ARCHITECTURE-v2.md
+│   │   ├── PPT-SUMMARY.md
+│   │   └── DIAGRAMS.md
+│   ├── USAGE.md           # Usage guide
 │   └── guidelines/
 │       └── hook-adaptation-table.md  # SSOT adaptation spec
 └── package.json
@@ -311,11 +423,17 @@ pnpm exec tsc --noEmit
 ## Roadmap
 
 - [x] **Phase 1**: CLI + file mode (init, trace, summary)
-- [ ] **Phase 2**: Project-embedded mode (policies in git, CI integration)
-- [ ] **Phase 3**: Sidecar + dashboard (cross-project aggregation, web UI)
+- [x] **Phase 2**: Semantic hook system (tech stack detection, agent.md scanning)
+- [ ] **Phase 3**: Project-embedded mode (policies in git, CI integration)
+- [ ] **Phase 4**: Sidecar + dashboard (cross-project aggregation, web UI)
+- [ ] **Phase 5**: Intelligence (self-learning, behavior analysis)
 
 ## Documentation
 
+- [Usage Guide](doc/USAGE.md) - Complete usage guide
+- [Architecture Design](doc/architecture/ARCHITECTURE-v2.md) - Detailed architecture
+- [PPT Summary](doc/architecture/PPT-SUMMARY.md) - Presentation outline
+- [Diagrams](doc/architecture/DIAGRAMS.md) - Architecture diagrams
 - [Quick Start Guide](QUICKSTART.md)
 - [Hook Adaptation Table](doc/guidelines/hook-adaptation-table.md) - Complete event taxonomy and runtime mappings
 
