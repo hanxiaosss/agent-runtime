@@ -30,7 +30,8 @@ function printHelp(): void {
     hannah <command> [options]
 
   Commands:
-    init [dir]              Generate .harness/ directory (default: cwd)
+    init [dir] [options]    Generate .harness/ directory (default: cwd)
+      --agent=<name>          Select agent: claude-code, copilot, qoder, codex, trae
     trace [options]         View agent runtime traces
       --all                   Show all entries (default: last 50)
       --follow                Follow traces in real-time
@@ -43,6 +44,8 @@ function printHelp(): void {
 
   Examples:
     hannah init
+    hannah init --agent=copilot
+    hannah init ./my-project --agent=claude-code
     hannah trace --follow
     hannah summary --today
 `);

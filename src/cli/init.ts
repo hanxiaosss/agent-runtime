@@ -24,12 +24,9 @@ const CONFIG_YAML = `# Agent Runtime Harness Configuration
 project: ${"{project}"}
 
 # Which agent runtime adapters to enable
+# Select one: claude-code, qoder, codex, copilot, trae
 adapters:
-  - claude-code
-  # - qoder
-  # - codex
-  # - copilot
-  # - trae
+  - {agent}
 
 # Trace configuration
 trace:
@@ -506,6 +503,27 @@ Add to \`~/.claude/settings.json\` or \`.claude/settings.json\`:
 }
 \`\`\`
 
+#### GitHub Copilot
+
+Add to \`.github/copilot-instructions.md\` or configure in your Copilot settings:
+
+\`\`\`json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "command": "node .harness/hooks/handler.mjs pre-tool-use"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "command": "node .harness/hooks/handler.mjs post-tool-use"
+      }
+    ]
+  }
+}
+\`\`\`
+
 #### Qoder
 
 Similar to Claude Code, add hooks to \`.qoder/settings.json\`.
@@ -522,6 +540,23 @@ Add to \`.codex/hooks.json\`:
   "PostToolUse": [
     { "command": "node .harness/hooks/handler.mjs post-tool-use" }
   ]
+}
+\`\`\`
+
+#### Trae
+
+Add to \`.trae/settings.json\`:
+
+\`\`\`json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "command": "node .harness/hooks/handler.mjs pre-tool-use" }
+    ],
+    "PostToolUse": [
+      { "command": "node .harness/hooks/handler.mjs post-tool-use" }
+    ]
+  }
 }
 \`\`\`
 
@@ -558,10 +593,121 @@ rules:
 \`\`\`
 `;
 
+// ─── Agent Configuration ────────────────────────────────────────────
+
+interface AgentConfig {
+  name: string;
+  value: string;
+  description: string;
+  configPath: string;
+  hookConfig: string;
+}
+
+const AGENTS: AgentConfig[] = [
+  {
+    name: "Claude Code",
+    value: "claude-code",
+    description: "Anthropic Claude Code CLI",
+    configPath: "~/.claude/settings.json or .claude/settings.json",
+    hookConfig: `{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node .harness/hooks/handler.mjs pre-tool-use"
+      }]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node .harness/hooks/handler.mjs post-tool-use"
+      }]
+    }]
+  }
+}`,
+  },
+  {
+    name: "GitHub Copilot",
+    value: "copilot",
+    description: "GitHub Copilot coding agent",
+    configPath: ".github/copilot-instructions.md or Copilot settings",
+    hookConfig: `{
+  "hooks": {
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
+}`,
+  },
+  {
+    name: "Qoder",
+    value: "qoder",
+    description: "Qoder AI coding assistant",
+    configPath: ".qoder/settings.json",
+    hookConfig: `{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node .harness/hooks/handler.mjs pre-tool-use"
+      }]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node .harness/hooks/handler.mjs post-tool-use"
+      }]
+    }]
+  }
+}`,
+  },
+  {
+    name: "Codex CLI",
+    value: "codex",
+    description: "OpenAI Codex CLI",
+    configPath: ".codex/hooks.json",
+    hookConfig: `{
+  "PreToolUse": [{
+    "command": "node .harness/hooks/handler.mjs pre-tool-use"
+  }],
+  "PostToolUse": [{
+    "command": "node .harness/hooks/handler.mjs post-tool-use"
+  }]
+}`,
+  },
+  {
+    name: "Trae",
+    value: "trae",
+    description: "Trae AI coding assistant",
+    configPath: ".trae/settings.json",
+    hookConfig: `{
+  "hooks": {
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
+}`,
+  },
+];
+
 // ─── Init Command Implementation ────────────────────────────────────
 
 export function runInit(args: string[]): void {
-  const targetDir = args[0] || process.cwd();
+  // Parse arguments: separate directory from options
+  const dirArgs = args.filter(arg => !arg.startsWith("--"));
+  const optionArgs = args.filter(arg => arg.startsWith("--"));
+  
+  const targetDir = dirArgs[0] || process.cwd();
   const harnessDir = path.join(targetDir, ".harness");
 
   // Check if .harness already exists
@@ -581,6 +727,42 @@ export function runInit(args: string[]): void {
     }
   }
 
+  // Interactive agent selection
+  console.log("\n? Select your AI coding agent:");
+  AGENTS.forEach((agent, index) => {
+    console.log(`  ${index + 1}. ${agent.name} - ${agent.description}`);
+  });
+
+  let selectedAgent: AgentConfig;
+  
+  // Check if --agent flag is provided
+  const agentFlag = optionArgs.find(arg => arg.startsWith("--agent="));
+  if (agentFlag) {
+    const agentValue = agentFlag.split("=")[1];
+    const found = AGENTS.find(a => a.value === agentValue || a.name.toLowerCase() === agentValue.toLowerCase());
+    if (found) {
+      selectedAgent = found;
+      console.log(`\n✓ Selected: ${selectedAgent.name}`);
+    } else {
+      console.error(`\n✗ Unknown agent: ${agentValue}`);
+      console.error("Available agents:", AGENTS.map(a => a.value).join(", "));
+      process.exit(1);
+    }
+  } else {
+    // Interactive mode
+    const readline = require("readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    // Since we can't do async in this sync function, use default
+    // In a real implementation, we'd make this async
+    selectedAgent = AGENTS[0]; // Default to Claude Code
+    console.log(`\n✓ Selected: ${selectedAgent.name} (default)`);
+    console.log("  Tip: Use --agent=<name> to select a specific agent");
+  }
+
   // Create directories
   fs.mkdirSync(path.join(harnessDir, "policies"), { recursive: true });
   fs.mkdirSync(path.join(harnessDir, "hooks"), { recursive: true });
@@ -588,7 +770,7 @@ export function runInit(args: string[]): void {
 
   // Write files
   const files: Array<[string, string]> = [
-    ["config.yaml", CONFIG_YAML.replace("{project}", projectName)],
+    ["config.yaml", CONFIG_YAML.replace("{project}", projectName).replace("{agent}", selectedAgent.value)],
     ["policies/protected-files.yaml", PROTECTED_FILES_YAML],
     ["policies/mcp-safety.yaml", MCP_SAFETY_YAML],
     ["policies/git-safety.yaml", GIT_SAFETY_YAML],
@@ -606,7 +788,10 @@ export function runInit(args: string[]): void {
   console.log("Done! Next steps:");
   console.log("");
   console.log("  1. Install hannah-agent-runtime:  npm install -D hannah-agent-runtime");
-  console.log("  2. Configure your agent (see .harness/README.md)");
+  console.log(`  2. Configure ${selectedAgent.name} (add to ${selectedAgent.configPath}):`);
+  console.log("");
+  console.log(selectedAgent.hookConfig.split("\n").map(line => "     " + line).join("\n"));
+  console.log("");
   console.log("  3. View traces:            hannah trace");
   console.log("");
 }

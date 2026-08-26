@@ -1,7 +1,7 @@
 # Agent Runtime Harness Configuration
 # See: doc/guidelines/hook-adaptation-table.md
 
-project: test-project
+project: hannah-agent-runtime
 
 # Which agent runtime adapters to enable
 # Select one: claude-code, qoder, codex, copilot, trae

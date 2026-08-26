@@ -1,0 +1,48 @@
+# Protected Files Policy
+# Prevents agents from modifying sensitive files.
+
+name: protected-files
+description: Prevent modification of sensitive configuration and lock files
+
+rules:
+  - name: block-env-files
+    when: code.before_modify
+    match:
+      - field: filePath
+        pattern:
+          - "**/.env"
+          - "**/.env.*"
+          - "**/*.env"
+    action: deny
+    feedback: "Cannot modify environment files (.env). These contain secrets and must be edited manually."
+
+  - name: block-lock-files
+    when: code.before_modify
+    match:
+      - field: filePath
+        pattern:
+          - "**/package-lock.json"
+          - "**/pnpm-lock.yaml"
+          - "**/yarn.lock"
+    action: deny
+    feedback: "Cannot modify lock files directly. Run the package manager instead."
+
+  - name: block-core-files
+    when: code.before_modify
+    match:
+      - field: filePath
+        pattern:
+          - "src/core/**"
+          - "src/kernel/**"
+    action: deny
+    feedback: "Core module files require human review. Changes to core modules need explicit approval."
+
+  - name: warn-config-changes
+    when: code.before_modify
+    match:
+      - field: filePath
+        pattern:
+          - "**/tsconfig.json"
+          - "**/package.json"
+    action: warn
+    feedback: "You are modifying a project configuration file. Ensure this is intentional."
