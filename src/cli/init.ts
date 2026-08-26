@@ -15,6 +15,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as readline from "node:readline";
 
 // ─── Templates ──────────────────────────────────────────────────────
 
@@ -601,6 +602,7 @@ interface AgentConfig {
   description: string;
   configPath: string;
   hookConfig: string;
+  generateConfig: (projectRoot: string) => void;
 }
 
 const AGENTS: AgentConfig[] = [
@@ -608,7 +610,7 @@ const AGENTS: AgentConfig[] = [
     name: "Claude Code",
     value: "claude-code",
     description: "Anthropic Claude Code CLI",
-    configPath: "~/.claude/settings.json or .claude/settings.json",
+    configPath: ".claude/settings.json",
     hookConfig: `{
   "hooks": {
     "PreToolUse": [{
@@ -627,13 +629,47 @@ const AGENTS: AgentConfig[] = [
     }]
   }
 }`,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".claude");
+      const configPath = path.join(configDir, "settings.json");
+      
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      const config = {
+        hooks: {
+          PreToolUse: [{
+            matcher: "",
+            hooks: [{
+              type: "command",
+              command: "node .harness/hooks/handler.mjs pre-tool-use"
+            }]
+          }],
+          PostToolUse: [{
+            matcher: "",
+            hooks: [{
+              type: "command",
+              command: "node .harness/hooks/handler.mjs post-tool-use"
+            }]
+          }]
+        }
+      };
+      
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    },
   },
   {
     name: "GitHub Copilot",
     value: "copilot",
     description: "GitHub Copilot coding agent",
-    configPath: ".github/copilot-instructions.md or Copilot settings",
-    hookConfig: `{
+    configPath: ".github/copilot-instructions.md",
+    hookConfig: `# Agent Runtime Hooks
+
+Add the following to your Copilot settings:
+
+\`\`\`json
+{
   "hooks": {
     "PreToolUse": [{
       "command": "node .harness/hooks/handler.mjs pre-tool-use"
@@ -642,7 +678,55 @@ const AGENTS: AgentConfig[] = [
       "command": "node .harness/hooks/handler.mjs post-tool-use"
     }]
   }
-}`,
+}
+\`\`\``,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".github");
+      const configPath = path.join(configDir, "copilot-instructions.md");
+      
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      const content = `# Copilot Agent Runtime Configuration
+
+This project uses Agent Runtime to monitor and control Copilot behavior.
+
+## Hooks Configuration
+
+Add the following to your Copilot settings (VS Code or CLI):
+
+\`\`\`json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
+}
+\`\`\`
+
+## What This Does
+
+- **PreToolUse**: Runs before each tool execution to check policies
+- **PostToolUse**: Runs after each tool execution to record traces
+- Policies are defined in \`.harness/policies/\`
+- Traces are saved to \`.harness/traces/\`
+
+## Viewing Traces
+
+\`\`\`bash
+hannah trace          # View recent traces
+hannah trace --follow # Follow in real-time
+hannah summary        # View statistics
+\`\`\`
+`;
+      
+      fs.writeFileSync(configPath, content);
+    },
   },
   {
     name: "Qoder",
@@ -667,6 +751,35 @@ const AGENTS: AgentConfig[] = [
     }]
   }
 }`,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".qoder");
+      const configPath = path.join(configDir, "settings.json");
+      
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      const config = {
+        hooks: {
+          PreToolUse: [{
+            matcher: "",
+            hooks: [{
+              type: "command",
+              command: "node .harness/hooks/handler.mjs pre-tool-use"
+            }]
+          }],
+          PostToolUse: [{
+            matcher: "",
+            hooks: [{
+              type: "command",
+              command: "node .harness/hooks/handler.mjs post-tool-use"
+            }]
+          }]
+        }
+      };
+      
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    },
   },
   {
     name: "Codex CLI",
@@ -681,6 +794,25 @@ const AGENTS: AgentConfig[] = [
     "command": "node .harness/hooks/handler.mjs post-tool-use"
   }]
 }`,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".codex");
+      const configPath = path.join(configDir, "hooks.json");
+      
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      const config = {
+        PreToolUse: [{
+          command: "node .harness/hooks/handler.mjs pre-tool-use"
+        }],
+        PostToolUse: [{
+          command: "node .harness/hooks/handler.mjs post-tool-use"
+        }]
+      };
+      
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    },
   },
   {
     name: "Trae",
@@ -697,12 +829,33 @@ const AGENTS: AgentConfig[] = [
     }]
   }
 }`,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".trae");
+      const configPath = path.join(configDir, "settings.json");
+      
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      const config = {
+        hooks: {
+          PreToolUse: [{
+            command: "node .harness/hooks/handler.mjs pre-tool-use"
+          }],
+          PostToolUse: [{
+            command: "node .harness/hooks/handler.mjs post-tool-use"
+          }]
+        }
+      };
+      
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    },
   },
 ];
 
 // ─── Init Command Implementation ────────────────────────────────────
 
-export function runInit(args: string[]): void {
+export async function runInit(args: string[]): Promise<void> {
   // Parse arguments: separate directory from options
   const dirArgs = args.filter(arg => !arg.startsWith("--"));
   const optionArgs = args.filter(arg => arg.startsWith("--"));
@@ -749,11 +902,28 @@ export function runInit(args: string[]): void {
       process.exit(1);
     }
   } else {
-    // Interactive mode - not implemented yet, use default
-    // TODO: Implement interactive selection with readline or inquirer
-    selectedAgent = AGENTS[0]; // Default to Claude Code
-    console.log(`\n✓ Selected: ${selectedAgent.name} (default)`);
-    console.log("  Tip: Use --agent=<name> to select a specific agent");
+    // Interactive mode
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    const answer = await new Promise<string>((resolve) => {
+      rl.question("\n  Enter number (1-5): ", (ans) => {
+        rl.close();
+        resolve(ans.trim());
+      });
+    });
+
+    const index = parseInt(answer, 10) - 1;
+    if (index >= 0 && index < AGENTS.length) {
+      selectedAgent = AGENTS[index];
+      console.log(`\n✓ Selected: ${selectedAgent.name}`);
+    } else {
+      console.error("\n✗ Invalid selection. Please use --agent=<name> to specify.");
+      console.error("Available agents:", AGENTS.map(a => a.value).join(", "));
+      process.exit(1);
+    }
   }
 
   // Create directories
@@ -777,14 +947,16 @@ export function runInit(args: string[]): void {
     console.log(`  ✓ .harness/${filePath}`);
   }
 
+  // Generate agent-specific configuration
+  console.log(`\n  ✓ Generating ${selectedAgent.name} configuration...`);
+  selectedAgent.generateConfig(targetDir);
+  console.log(`  ✓ ${selectedAgent.configPath}`);
+
   console.log("");
   console.log("Done! Next steps:");
   console.log("");
   console.log("  1. Install hannah-agent-runtime:  npm install -D hannah-agent-runtime");
-  console.log(`  2. Configure ${selectedAgent.name} (add to ${selectedAgent.configPath}):`);
-  console.log("");
-  console.log(selectedAgent.hookConfig.split("\n").map(line => "     " + line).join("\n"));
-  console.log("");
-  console.log("  3. View traces:            hannah trace");
+  console.log(`  2. Agent configuration generated: ${selectedAgent.configPath}`);
+  console.log("  3. View traces:                   hannah trace");
   console.log("");
 }

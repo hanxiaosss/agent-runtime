@@ -53,7 +53,10 @@ function printHelp(): void {
 
 switch (command) {
   case "init":
-    runInit(args.slice(1));
+    runInit(args.slice(1)).catch((err) => {
+      console.error("Error:", err.message);
+      process.exit(1);
+    });
     break;
 
   case "trace":

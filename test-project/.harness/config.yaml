@@ -6,7 +6,7 @@ project: test-project
 # Which agent runtime adapters to enable
 # Select one: claude-code, qoder, codex, copilot, trae
 adapters:
-  - copilot
+  - codex
 
 # Trace configuration
 trace:

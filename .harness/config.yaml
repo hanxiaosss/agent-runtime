@@ -6,7 +6,7 @@ project: hannah-agent-runtime
 # Which agent runtime adapters to enable
 # Select one: claude-code, qoder, codex, copilot, trae
 adapters:
-  - copilot
+  - claude-code
 
 # Trace configuration
 trace:
