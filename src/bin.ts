@@ -8,11 +8,11 @@
  *   summary    — Show aggregate statistics
  *
  * Usage:
- *   npx agent-runtime init
- *   npx agent-runtime trace
- *   npx agent-runtime trace --follow
- *   npx agent-runtime summary
- *   npx agent-runtime summary --today
+ *   hannah init
+ *   hannah trace
+ *   hannah trace --follow
+ *   hannah summary
+ *   hannah summary --today
  */
 
 import { runInit } from "./cli/init.js";
@@ -24,10 +24,10 @@ const command = args[0];
 
 function printHelp(): void {
   console.log(`
-  agent-runtime — Cross-agent runtime event & policy layer
+  hannah — Cross-agent runtime event & policy layer
 
   Usage:
-    agent-runtime <command> [options]
+    hannah <command> [options]
 
   Commands:
     init [dir]              Generate .harness/ directory (default: cwd)
@@ -42,9 +42,9 @@ function printHelp(): void {
     help                    Show this help message
 
   Examples:
-    npx agent-runtime init
-    npx agent-runtime trace --follow
-    npx agent-runtime summary --today
+    hannah init
+    hannah trace --follow
+    hannah summary --today
 `);
 }
 
@@ -73,6 +73,6 @@ switch (command) {
 
   default:
     console.error(`Unknown command: ${command}`);
-    console.error("Run 'agent-runtime help' for usage.");
+    console.error("Run 'hannah help' for usage.");
     process.exit(1);
 }

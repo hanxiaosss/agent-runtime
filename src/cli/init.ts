@@ -208,26 +208,26 @@ import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-// ─── Resolve agent-runtime ──────────────────────────────────────────
+// ─── Resolve hannah-agent-runtime ──────────────────────────────────────────
 // Try local project install first, then global
 
 let runtime;
 try {
-  runtime = require("agent-runtime");
+  runtime = require("hannah-agent-runtime");
 } catch {
   // Try resolving from the project root
   const projectRoot = findProjectRoot();
   if (projectRoot) {
     try {
-      runtime = require(path.join(projectRoot, "node_modules", "agent-runtime"));
+      runtime = require(path.join(projectRoot, "node_modules", "hannah-agent-runtime"));
     } catch {
       console.error(
-        "agent-runtime not found. Install it: npm install -D agent-runtime"
+        "hannah-agent-runtime not found. Install it: npm install -D hannah-agent-runtime"
       );
       process.exit(1);
     }
   } else {
-    console.error("agent-runtime not found. Install it: npm install -D agent-runtime");
+    console.error("hannah-agent-runtime not found. Install it: npm install -D hannah-agent-runtime");
     process.exit(1);
   }
 }
@@ -255,7 +255,7 @@ try {
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
     "node_modules",
-    "agent-runtime",
+    "hannah-agent-runtime",
     "dist",
     "cli",
     "yaml-loader.js"
@@ -465,10 +465,10 @@ This directory contains the project-level agent runtime configuration.
 
 ## Setup
 
-### 1. Install agent-runtime
+### 1. Install hannah-agent-runtime
 
 \`\`\`bash
-npm install -D agent-runtime
+npm install -D hannah-agent-runtime
 \`\`\`
 
 ### 2. Configure your agent
@@ -529,13 +529,13 @@ Add to \`.codex/hooks.json\`:
 
 \`\`\`bash
 # View recent trace entries
-npx agent-runtime trace
+hannah trace
 
 # Follow traces in real-time
-npx agent-runtime trace --follow
+hannah trace --follow
 
 # View summary statistics
-npx agent-runtime summary
+hannah summary
 \`\`\`
 
 ## Customizing Policies
@@ -605,8 +605,8 @@ export function runInit(args: string[]): void {
   console.log("");
   console.log("Done! Next steps:");
   console.log("");
-  console.log("  1. Install agent-runtime:  npm install -D agent-runtime");
+  console.log("  1. Install hannah-agent-runtime:  npm install -D hannah-agent-runtime");
   console.log("  2. Configure your agent (see .harness/README.md)");
-  console.log("  3. View traces:            npx agent-runtime trace");
+  console.log("  3. View traces:            hannah trace");
   console.log("");
 }

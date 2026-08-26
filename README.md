@@ -1,6 +1,6 @@
 # Agent Runtime
 
-> **A cross-agent-runtime unified event and policy layer for observing, constraining, and providing feedback on AI agent behavior.**
+> **A cross-hannah unified event and policy layer for observing, constraining, and providing feedback on AI agent behavior.**
 
 ## Overview
 
@@ -39,14 +39,14 @@ Agent Runtime provides a unified control plane for AI coding agents (Claude Code
 ### Installation
 
 ```bash
-npm install -g agent-runtime
+npm install -g hannah-hannah
 ```
 
 ### Initialize Project
 
 ```bash
 cd your-project
-agent-runtime init
+hannah init
 ```
 
 This generates `.harness/` with policies, hooks, and configuration.
@@ -73,13 +73,13 @@ Add hooks to your agent's settings (see `.harness/README.md` for details):
 
 ```bash
 # Timeline view
-agent-runtime trace
+hannah trace
 
 # Real-time follow
-agent-runtime trace --follow
+hannah trace --follow
 
 # Statistics summary
-agent-runtime summary
+hannah summary
 ```
 
 ## Example Output
@@ -236,11 +236,11 @@ rules:
 
 ## CLI Commands
 
-### `agent-runtime init [dir]`
+### `hannah init [dir]`
 
 Generate `.harness/` directory with policies and hooks.
 
-### `agent-runtime trace [options]`
+### `hannah trace [options]`
 
 View agent runtime traces.
 
@@ -250,7 +250,7 @@ Options:
 - `--json` - Output raw JSON
 - `--denied` - Only show denied events
 
-### `agent-runtime summary [options]`
+### `hannah summary [options]`
 
 Show aggregate statistics.
 
@@ -261,7 +261,7 @@ Options:
 ## Project Structure
 
 ```
-agent-runtime/
+hannah/
 ├── src/
 │   ├── core/              # Core abstractions
 │   │   ├── event.ts       # Unified event taxonomy

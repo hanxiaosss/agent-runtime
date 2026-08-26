@@ -1,0 +1,21 @@
+# Agent Runtime Harness Configuration
+# See: doc/guidelines/hook-adaptation-table.md
+
+project: test-project
+
+# Which agent runtime adapters to enable
+adapters:
+  - claude-code
+  # - qoder
+  # - codex
+  # - copilot
+  # - trae
+
+# Trace configuration
+trace:
+  enabled: true
+  dir: .harness/traces
+
+# Policy directories to load (relative to .harness/)
+policies:
+  - policies

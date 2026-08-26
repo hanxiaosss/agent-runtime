@@ -10,9 +10,9 @@ Agent Runtime is a unified control plane for AI coding agents. It provides:
 ## Installation
 
 ```bash
-npm install -g agent-runtime
+npm install -g hannah
 # or
-pnpm add -g agent-runtime
+pnpm add -g hannah
 ```
 
 ## Quick Start
@@ -21,7 +21,7 @@ pnpm add -g agent-runtime
 
 ```bash
 cd your-project
-agent-runtime init
+hannah init
 ```
 
 This creates `.harness/` with:
@@ -73,13 +73,13 @@ See `.harness/README.md` for Codex, Qoder, Copilot, and Trae configurations.
 
 ```bash
 # Show recent traces
-agent-runtime trace
+hannah trace
 
 # Follow traces in real-time
-agent-runtime trace --follow
+hannah trace --follow
 
 # View summary statistics
-agent-runtime summary
+hannah summary
 ```
 
 ## Example Output

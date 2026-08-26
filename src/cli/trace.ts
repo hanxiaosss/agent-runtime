@@ -4,11 +4,11 @@
  * Reads .harness/traces/*.jsonl and renders a timeline view.
  *
  * Usage:
- *   agent-runtime trace              — show last 50 entries
- *   agent-runtime trace --all        — show all entries
- *   agent-runtime trace --follow     — tail -f style
- *   agent-runtime trace --json       — output raw JSON
- *   agent-runtime trace --denied     — only show denied events
+ *   hannah trace              — show last 50 entries
+ *   hannah trace --all        — show all entries
+ *   hannah trace --follow     — tail -f style
+ *   hannah trace --json       — output raw JSON
+ *   hannah trace --denied     — only show denied events
  */
 
 import * as fs from "node:fs";
@@ -26,7 +26,7 @@ interface TraceEntry {
 export function runTrace(args: string[]): void {
   const harnessDir = findHarnessDir();
   if (!harnessDir) {
-    console.error("No .harness/ directory found. Run 'agent-runtime init' first.");
+    console.error("No .harness/ directory found. Run 'hannah init' first.");
     process.exit(1);
   }
 

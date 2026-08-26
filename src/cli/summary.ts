@@ -4,9 +4,9 @@
  * Generates an aggregate summary of agent runtime traces.
  *
  * Usage:
- *   agent-runtime summary              — summary of all traces
- *   agent-runtime summary --today      — summary of today only
- *   agent-runtime summary --days 7     — summary of last N days
+ *   hannah summary              — summary of all traces
+ *   hannah summary --today      — summary of today only
+ *   hannah summary --days 7     — summary of last N days
  */
 
 import * as fs from "node:fs";
@@ -24,7 +24,7 @@ interface TraceEntry {
 export function runSummary(args: string[]): void {
   const harnessDir = findHarnessDir();
   if (!harnessDir) {
-    console.error("No .harness/ directory found. Run 'agent-runtime init' first.");
+    console.error("No .harness/ directory found. Run 'hannah init' first.");
     process.exit(1);
   }
 

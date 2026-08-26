@@ -8,7 +8,7 @@ A complete CLI-based project-level agent runtime control system.
 
 ### 1. CLI Commands
 
-#### `agent-runtime init`
+#### `hannah init`
 Generates `.harness/` directory with:
 - `config.yaml` - Runtime configuration
 - `policies/protected-files.yaml` - File protection rules
@@ -17,14 +17,14 @@ Generates `.harness/` directory with:
 - `hooks/handler.mjs` - Unified hook handler for all agents
 - `README.md` - Integration instructions
 
-#### `agent-runtime trace`
+#### `hannah trace`
 Views agent runtime traces in timeline format:
 - Shows timestamp, action (ALLOW/DENY), event type, source, and details
 - Supports `--follow` for real-time monitoring
 - Supports `--json` for raw output
 - Supports `--denied` to filter only blocked events
 
-#### `agent-runtime summary`
+#### `hannah summary`
 Generates aggregate statistics:
 - Total/allowed/denied/warned counts with percentages
 - Tool usage breakdown
@@ -99,11 +99,11 @@ All tests passed ✅
 
 ```bash
 # 1. Install globally
-npm install -g agent-runtime
+npm install -g hannah
 
 # 2. Initialize project
 cd my-project
-agent-runtime init
+hannah init
 
 # 3. Configure agent (e.g., Claude Code)
 # Add hooks to ~/.claude/settings.json
@@ -111,15 +111,15 @@ agent-runtime init
 # 4. Use agent normally - traces are recorded automatically
 
 # 5. View traces
-agent-runtime trace
-agent-runtime trace --follow
-agent-runtime summary
+hannah trace
+hannah trace --follow
+hannah summary
 ```
 
 ## File Structure
 
 ```
-agent-runtime/
+hannah/
 ├── src/
 │   ├── core/                    # Core abstractions
 │   │   ├── event.ts            # 17 event types
@@ -169,7 +169,7 @@ Generated per project:
 
 ## Key Features
 
-1. **Zero-config initialization**: `agent-runtime init` generates everything needed
+1. **Zero-config initialization**: `hannah init` generates everything needed
 2. **Declarative policies**: YAML-based rules, easy to customize
 3. **Observable traces**: JSONL format, timeline and summary views
 4. **Multi-runtime support**: Works with Claude Code, Codex, Qoder, Copilot, Trae
