@@ -15,7 +15,6 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as readline from "node:readline";
 
 // ─── Templates ──────────────────────────────────────────────────────
 
@@ -887,10 +886,7 @@ export async function runInit(args: string[]): Promise<void> {
 
   // Interactive agent selection
   console.log("\n? Select your AI coding agent:");
-  AGENTS.forEach((agent, index) => {
-    console.log(`  ${index + 1}. ${agent.name} - ${agent.description}`);
-  });
-
+  
   let selectedAgent: AgentConfig;
   
   // Check if --agent flag is provided
@@ -900,35 +896,76 @@ export async function runInit(args: string[]): Promise<void> {
     const found = AGENTS.find(a => a.value === agentValue || a.name.toLowerCase() === agentValue.toLowerCase());
     if (found) {
       selectedAgent = found;
-      console.log(`\n✓ Selected: ${selectedAgent.name}`);
+      console.log(`✓ Selected: ${selectedAgent.name}`);
     } else {
-      console.error(`\n✗ Unknown agent: ${agentValue}`);
+      console.error(`✗ Unknown agent: ${agentValue}`);
       console.error("Available agents:", AGENTS.map(a => a.value).join(", "));
       process.exit(1);
     }
   } else {
-    // Interactive mode
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    const answer = await new Promise<string>((resolve) => {
-      rl.question("\n  Enter number (1-5): ", (ans) => {
-        rl.close();
-        resolve(ans.trim());
+    // Interactive mode with arrow keys
+    let currentIndex = 0;
+    
+    // Render options
+    const renderOptions = () => {
+      // Clear previous render
+      process.stdout.write(`\x1b[${AGENTS.length}A\x1b[0J`);
+      
+      AGENTS.forEach((agent, index) => {
+        const isSelected = index === currentIndex;
+        const prefix = isSelected ? "❯" : " ";
+        const highlight = isSelected ? "\x1b[36m" : "";
+        const reset = isSelected ? "\x1b[0m" : "";
+        console.log(`  ${prefix} ${highlight}${agent.name}${reset} - ${agent.description}`);
       });
+    };
+    
+    // Initial render
+    AGENTS.forEach((agent, index) => {
+      console.log(`    ${agent.name} - ${agent.description}`);
     });
-
-    const index = parseInt(answer, 10) - 1;
-    if (index >= 0 && index < AGENTS.length) {
-      selectedAgent = AGENTS[index];
-      console.log(`\n✓ Selected: ${selectedAgent.name}`);
-    } else {
-      console.error("\n✗ Invalid selection. Please use --agent=<name> to specify.");
-      console.error("Available agents:", AGENTS.map(a => a.value).join(", "));
-      process.exit(1);
-    }
+    renderOptions();
+    
+    // Setup stdin for raw input
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+    
+    // Wait for user input
+    selectedAgent = await new Promise<AgentConfig>((resolve) => {
+      const onKeyPress = (key: string) => {
+        // Ctrl+C
+        if (key === "\u0003") {
+          stdin.setRawMode(false);
+          stdin.pause();
+          process.exit(0);
+        }
+        
+        // Up arrow
+        if (key === "\u001b[A" || key === "k") {
+          currentIndex = currentIndex > 0 ? currentIndex - 1 : AGENTS.length - 1;
+          renderOptions();
+        }
+        
+        // Down arrow
+        if (key === "\u001b[B" || key === "j") {
+          currentIndex = currentIndex < AGENTS.length - 1 ? currentIndex + 1 : 0;
+          renderOptions();
+        }
+        
+        // Enter
+        if (key === "\r" || key === "\n") {
+          stdin.removeListener("data", onKeyPress);
+          stdin.setRawMode(false);
+          stdin.pause();
+          console.log(`\n✓ Selected: ${AGENTS[currentIndex].name}`);
+          resolve(AGENTS[currentIndex]);
+        }
+      };
+      
+      stdin.on("data", onKeyPress);
+    });
   }
 
   // Create directories
