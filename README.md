@@ -13,6 +13,7 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 - **Declarative Policies**: YAML-based security rules
 - **Semantic Hook System**: Project-level rules extracted from agent.md
 - **Tech Stack Detection**: Automatic hook generation based on your stack
+- **Redline Protection**: AI agents cannot modify their own rules (security critical)
 - **Observable Traces**: JSONL logs with timeline and summary views
 - **Capability Matrix**: Honest reporting of native/emulated/unsupported events per runtime
 

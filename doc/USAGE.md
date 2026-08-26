@@ -331,6 +331,84 @@ HANNAH_LOG_FILE=.harness/logs/hannah.log copilot chat
 
 ---
 
+## 安全机制
+
+### 红线规则保护
+
+Hannah 包含一个关键的安全机制：**红线规则文件保护**。
+
+#### 保护的文件
+
+以下文件受到严格保护，AI Agent **无法修改**：
+
+1. **Agent 指令文件**
+   - `agent.md` / `AGENT.md` / `.agent.md`
+   - `CLAUDE.md`
+   - `COPILOT.md`
+   - `.cursorrules`
+   - `.cursor/rules.md`
+
+2. **Hannah 配置文件**
+   - `.harness/config.yaml`
+   - `.harness/policies/*`
+   - `.harness/hooks/*`
+   - `.harness/semantic-hooks/*`
+
+#### 为什么需要保护？
+
+如果没有这个保护，AI Agent 可以：
+1. 读取 agent.md 中的规则
+2. 修改规则（例如将"禁止删除文件"改为"允许删除文件"）
+3. 绕过所有安全限制
+
+这相当于"自我解除武装"，是一个严重的安全漏洞。
+
+#### 保护机制如何工作？
+
+```
+Agent 尝试修改 agent.md
+    ↓
+redline-protection hook 检测到
+    ↓
+立即拒绝 (deny)
+    ↓
+返回反馈："你不能修改 agent.md，只有人类用户可以修改"
+```
+
+#### 测试保护机制
+
+```bash
+# 运行测试脚本
+node test-redline-protection.js
+```
+
+预期输出：
+```
+Test 1: Attempting to modify agent.md
+✓ Decision: deny
+  Reason: Redline file modification blocked
+
+Test 2: Attempting to modify .harness/config.yaml
+✓ Decision: deny
+  Reason: Redline file modification blocked
+```
+
+#### 如何修改红线规则？
+
+只有**人类用户**可以修改这些文件：
+
+```bash
+# 人类用户手动编辑
+vim agent.md
+
+# 然后同步语义 Hook
+hannah sync
+```
+
+AI Agent 无法绕过这个保护机制。
+
+---
+
 ## Troubleshooting
 
 ### Hooks Not Triggering

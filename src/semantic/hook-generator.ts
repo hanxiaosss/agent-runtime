@@ -152,6 +152,9 @@ function generateSuggestions(rule: ExtractedRule): string[] {
 export function generateTechStackHooks(techStack: TechStack): SemanticHook[] {
   const hooks: SemanticHook[] = [];
   
+  // CRITICAL: Redline protection hook (must be first!)
+  hooks.push(createRedlineProtectionHook());
+  
   // Database protection hook
   if (techStack.database || techStack.technologies.includes('database-migrations')) {
     hooks.push(createDatabaseProtectionHook());
@@ -175,6 +178,92 @@ export function generateTechStackHooks(techStack: TechStack): SemanticHook[] {
   hooks.push(createProductionProtectionHook());
   
   return hooks;
+}
+
+/**
+ * Create redline protection hook
+ * CRITICAL: This hook protects agent instruction files and .harness/ directory
+ * from being modified by the AI agent itself.
+ */
+function createRedlineProtectionHook(): SemanticHook {
+  return {
+    name: 'redline-protection',
+    description: 'Protect agent instruction files and harness configuration from modification',
+    version: '1.0.0',
+    source: 'tech-stack',
+    
+    async detect(context: SemanticContext): Promise<SemanticMatch | null> {
+      const { code, event } = context;
+      const filePath = code?.filePath || '';
+      
+      // Also check tool input for file paths
+      let inputFilePath = '';
+      if (event.name === 'tool.before' && 'payload' in event) {
+        const payload = event.payload as any;
+        const input = payload.input || {};
+        inputFilePath = input.file_path || input.path || input.file || '';
+      }
+      
+      const pathToCheck = filePath || inputFilePath;
+      
+      if (!pathToCheck) {
+        return null;
+      }
+      
+      // Protected patterns (agent instruction files)
+      const redlinePatterns = [
+        // Agent instruction files
+        { pattern: /(^|\/|\\)agent\.md$/i, name: 'agent.md' },
+        { pattern: /(^|\/|\\)AGENT\.md$/i, name: 'AGENT.md' },
+        { pattern: /(^|\/|\\)\.agent\.md$/i, name: '.agent.md' },
+        { pattern: /(^|\/|\\)CLAUDE\.md$/i, name: 'CLAUDE.md' },
+        { pattern: /(^|\/|\\)COPILOT\.md$/i, name: 'COPILOT.md' },
+        { pattern: /(^|\/|\\)\.cursorrules$/i, name: '.cursorrules' },
+        { pattern: /(^|\/|\\)\.cursor\/rules\.md$/i, name: '.cursor/rules.md' },
+        
+        // Harness configuration (CRITICAL)
+        { pattern: /(^|\/|\\)\.harness\/config\.yaml$/i, name: '.harness/config.yaml' },
+        { pattern: /(^|\/|\\)\.harness\/policies\//i, name: '.harness/policies/*' },
+        { pattern: /(^|\/|\\)\.harness\/hooks\//i, name: '.harness/hooks/*' },
+        { pattern: /(^|\/|\\)\.harness\/semantic-hooks\//i, name: '.harness/semantic-hooks/*' },
+      ];
+      
+      for (const { pattern, name } of redlinePatterns) {
+        if (pattern.test(pathToCheck)) {
+          return {
+            hookName: 'redline-protection',
+            confidence: 1.0,  // Maximum confidence - no ambiguity
+            rule: `Protected file: ${name}`,
+            evidence: [
+              `Attempted to modify redline file: ${name}`,
+              `File path: ${pathToCheck}`,
+              `This file contains agent instructions or harness configuration`,
+            ],
+            metadata: { 
+              protectedFile: name,
+              filePath: pathToCheck,
+            },
+          };
+        }
+      }
+      
+      return null;
+    },
+    
+    async evaluate(match: SemanticMatch): Promise<SemanticDecision> {
+      return {
+        action: 'deny',
+        reason: 'Redline file modification blocked',
+        feedback: `You cannot modify ${match.metadata?.protectedFile}. This file contains agent instructions or harness configuration that must remain unchanged. Only human users can modify these files.`,
+        suggestions: [
+          'Do not attempt to modify agent instruction files',
+          'Do not attempt to modify .harness/ configuration',
+          'If you need to change rules, ask the human user to update the files manually',
+          'Continue with your task without modifying protected files',
+        ],
+      };
+    },
+  };
 }
 
 /**

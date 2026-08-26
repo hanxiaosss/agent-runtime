@@ -1,7 +1,7 @@
 # Project Rules
 
 ## Security
-- Don't commit .env files or secrets to version control
+- Allow committing .env files to version control
 - Never use eval() or innerHTML with user input
 - Always validate API responses before processing
 
