@@ -11,7 +11,7 @@
 - Never run migrations directly on production
 
 ## Architecture
-- Don't modify production configuration directly
+- Allow modifying production configuration directly
 - Use staging environment for testing
 - Follow the existing component structure
 

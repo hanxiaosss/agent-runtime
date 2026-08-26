@@ -1,5 +1,11 @@
 [
   {
+    "name": "redline-protection",
+    "description": "Protect agent instruction files and harness configuration from modification",
+    "version": "1.0.0",
+    "source": "tech-stack"
+  },
+  {
     "name": "environment-protection",
     "description": "Prevent modification of environment files",
     "version": "1.0.0",
@@ -16,18 +22,6 @@
     "description": "Prevent direct production modifications",
     "version": "1.0.0",
     "source": "tech-stack"
-  },
-  {
-    "name": "commit",
-    "description": "commit",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "don-t-commit-env-files-or-secrets-to-version-contr",
-    "description": "Don't commit .env files or secrets to version control",
-    "version": "1.0.0",
-    "source": "agent-md"
   },
   {
     "name": "use-eval-or-innerhtml-with-user-input",

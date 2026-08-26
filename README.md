@@ -47,6 +47,22 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 - **Observable Traces**: JSONL logs with timeline and summary views
 - **Capability Matrix**: Honest reporting of native/emulated/unsupported events per runtime
 
+## Agent 支持状态
+
+> **重要**：并非所有 Agent 都支持 Hook 机制
+
+| Agent | Hook 支持 | 状态 |
+|-------|----------|------|
+| Claude Code | ✅ 完整支持 | ✅ 可用 |
+| Qoder | ✅ 完整支持 | ✅ 可用 |
+| Codex CLI | ✅ 完整支持 | ✅ 可用 |
+| GitHub Copilot | ❌ 不支持 | ❌ 不可用 |
+| Trae | ⚠️ 待验证 | ⚠️ 实验性 |
+
+**详细说明**：参见 [Agent 能力矩阵](doc/AGENT-CAPABILITIES.md)
+
+**注意**：GitHub Copilot 不支持 PreToolUse/PostToolUse hooks。如果选择 Copilot，hannah 只会生成配置文件，但 hooks 不会被触发。需要使用替代方案（如 Git Hooks、文件监控等）。
+
 ## Quick Start
 
 ### Installation
