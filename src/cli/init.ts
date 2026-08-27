@@ -1175,7 +1175,7 @@ export async function runInit(args: string[]): Promise<void> {
     
     if (!isTTY) {
       // Fallback to simple number input for non-TTY environments
-      console.log("\n  Enter number (1-5): ");
+      console.log(`\n  Enter number (1-${AGENTS.length}): `);
       const readline = await import("readline");
       const rl = readline.createInterface({
         input: process.stdin,
