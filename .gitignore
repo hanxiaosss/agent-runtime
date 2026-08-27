@@ -1,2 +1,16 @@
 node_modules/
 dist/
+
+# Test files
+test-*.js
+test-*.sh
+*.test.js
+src/test-*.ts
+
+# CLI artifacts
+test-project/
+test-copilot/
+
+# Trace files
+.harness/traces/
+traces/

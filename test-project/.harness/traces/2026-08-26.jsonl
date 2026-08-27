@@ -1,2 +1,0 @@
-{"timestamp":"2026-08-26T15:19:32.004Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"test","input":{}},"feedback":[]}
-{"timestamp":"2026-08-26T15:19:40.902Z","event":"tool.before","source":"copilot","action":"allow","payload":{"toolName":"Write","input":{"file_path":"test.js"}},"feedback":[]}
