@@ -1,0 +1,26 @@
+[
+  {
+    "name": "redline-protection",
+    "description": "Protect agent instruction files and harness configuration from modification",
+    "version": "1.0.0",
+    "source": "tech-stack"
+  },
+  {
+    "name": "environment-protection",
+    "description": "Prevent modification of environment files",
+    "version": "1.0.0",
+    "source": "tech-stack"
+  },
+  {
+    "name": "secret-detection",
+    "description": "Detect hardcoded secrets",
+    "version": "1.0.0",
+    "source": "tech-stack"
+  },
+  {
+    "name": "production-protection",
+    "description": "Prevent direct production modifications",
+    "version": "1.0.0",
+    "source": "tech-stack"
+  }
+]

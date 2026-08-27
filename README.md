@@ -44,24 +44,25 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 - **Declarative Policies**: YAML-based security rules
 - **Semantic Hook System**: Project-level rules extracted from agent.md
 - **Tech Stack Detection**: Automatic hook generation based on your stack
+- **File Watcher Protection**: Agent-agnostic file monitoring for agents without hook support
 - **Observable Traces**: JSONL logs with timeline and summary views
 - **Capability Matrix**: Honest reporting of native/emulated/unsupported events per runtime
 
 ## Agent 支持状态
 
-> **重要**：并非所有 Agent 都支持 Hook 机制
+> **所有 Agent 都支持 Hook 机制**
 
-| Agent | Hook 支持 | 状态 |
-|-------|----------|------|
-| Claude Code | ✅ 完整支持 | ✅ 可用 |
-| Qoder | ✅ 完整支持 | ✅ 可用 |
-| Codex CLI | ✅ 完整支持 | ✅ 可用 |
-| GitHub Copilot | ❌ 不支持 | ❌ 不可用 |
-| Trae | ⚠️ 待验证 | ⚠️ 实验性 |
+| Agent | Hook 支持 | 配置位置 | 状态 |
+|-------|----------|---------|------|
+| Claude Code | ✅ 完整支持 | `.claude/settings.json` | ✅ 可用 |
+| Qoder | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
+| Codex CLI | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
+| GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
+| Trae | ⚠️ 待验证 | 待确认 | ⚠️ 实验性 |
 
 **详细说明**：参见 [Agent 能力矩阵](doc/AGENT-CAPABILITIES.md)
 
-**注意**：GitHub Copilot 不支持 PreToolUse/PostToolUse hooks。如果选择 Copilot，hannah 只会生成配置文件，但 hooks 不会被触发。需要使用替代方案（如 Git Hooks、文件监控等）。
+**注意**：所有主流 Agent 都支持 hooks。hannah 会自动生成对应 agent 的配置文件。
 
 ## Quick Start
 

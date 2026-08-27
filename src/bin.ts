@@ -5,12 +5,14 @@
  * Commands:
  *   init       — Generate .harness/ directory in the current project
  *   sync       — Synchronize semantic hooks with project rules
+ *   watch      — Start file system watcher for redline protection
  *   trace      — View agent runtime traces
  *   summary    — Show aggregate statistics
  *
  * Usage:
  *   hannah init
  *   hannah sync
+ *   hannah watch
  *   hannah trace
  *   hannah trace --follow
  *   hannah summary
@@ -36,6 +38,7 @@ function printHelp(): void {
     init [dir] [options]    Generate .harness/ directory (default: cwd)
       --agent=<name>          Select agent: claude-code, copilot, qoder, codex, trae
     sync [dir]              Synchronize semantic hooks with project rules
+    watch                   Start file system watcher for redline protection
     trace [options]         View agent runtime traces
       --all                   Show all entries (default: last 50)
       --follow                Follow traces in real-time
@@ -51,6 +54,7 @@ function printHelp(): void {
     hannah init --agent=copilot
     hannah init ./my-project --agent=claude-code
     hannah sync
+    hannah watch
     hannah trace --follow
     hannah summary --today
 `);
@@ -67,6 +71,14 @@ switch (command) {
   case "sync":
     runSync(args.slice(1)).catch((err) => {
       console.error("Error:", err.message);
+      process.exit(1);
+    });
+    break;
+
+  case "watch":
+    // Import watcher dynamically
+    import("./cli/watcher.js").catch((err) => {
+      console.error("Error starting watcher:", err.message);
       process.exit(1);
     });
     break;

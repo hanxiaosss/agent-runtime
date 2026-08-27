@@ -830,69 +830,47 @@ const AGENTS: AgentConfig[] = [
     name: "GitHub Copilot",
     value: "copilot",
     description: "GitHub Copilot coding agent",
-    configPath: ".github/copilot-instructions.md",
-    hookConfig: `# Agent Runtime Hooks
-
-Add the following to your Copilot settings:
-
-\`\`\`json
-{
+    configPath: ".github/hooks/hooks.json",
+    hookConfig: `{
+  "version": 1,
   "hooks": {
-    "PreToolUse": [{
-      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    "preToolUse": [{
+      "type": "command",
+      "bash": "node .harness/hooks/handler.mjs pre-tool-use",
+      "powershell": "node .harness/hooks/handler.mjs pre-tool-use"
     }],
-    "PostToolUse": [{
-      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    "postToolUse": [{
+      "type": "command",
+      "bash": "node .harness/hooks/handler.mjs post-tool-use",
+      "powershell": "node .harness/hooks/handler.mjs post-tool-use"
     }]
   }
-}
-\`\`\``,
+}`,
     generateConfig: (projectRoot: string) => {
-      const configDir = path.join(projectRoot, ".github");
-      const configPath = path.join(configDir, "copilot-instructions.md");
+      const configDir = path.join(projectRoot, ".github", "hooks");
+      const configPath = path.join(configDir, "hooks.json");
       
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
       
-      const content = `# Copilot Agent Runtime Configuration
-
-This project uses Agent Runtime to monitor and control Copilot behavior.
-
-## Hooks Configuration
-
-Add the following to your Copilot settings (VS Code or CLI):
-
-\`\`\`json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "command": "node .harness/hooks/handler.mjs pre-tool-use"
-    }],
-    "PostToolUse": [{
-      "command": "node .harness/hooks/handler.mjs post-tool-use"
-    }]
-  }
-}
-\`\`\`
-
-## What This Does
-
-- **PreToolUse**: Runs before each tool execution to check policies
-- **PostToolUse**: Runs after each tool execution to record traces
-- Policies are defined in \`.harness/policies/\`
-- Traces are saved to \`.harness/traces/\`
-
-## Viewing Traces
-
-\`\`\`bash
-hannah trace          # View recent traces
-hannah trace --follow # Follow in real-time
-hannah summary        # View statistics
-\`\`\`
-`;
+      const config = {
+        version: 1,
+        hooks: {
+          preToolUse: [{
+            type: "command",
+            bash: "node .harness/hooks/handler.mjs pre-tool-use",
+            powershell: "node .harness/hooks/handler.mjs pre-tool-use"
+          }],
+          postToolUse: [{
+            type: "command",
+            bash: "node .harness/hooks/handler.mjs post-tool-use",
+            powershell: "node .harness/hooks/handler.mjs post-tool-use"
+          }]
+        }
+      };
       
-      fs.writeFileSync(configPath, content);
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     },
   },
   {
@@ -1069,31 +1047,60 @@ export async function runInit(args: string[]): Promise<void> {
     // Interactive mode with arrow keys
     let currentIndex = 0;
     
-    // Render options
-    const renderOptions = () => {
-      // Clear previous render
-      process.stdout.write(`\x1b[${AGENTS.length}A\x1b[0J`);
-      
-      AGENTS.forEach((agent, index) => {
-        const isSelected = index === currentIndex;
-        const prefix = isSelected ? "❯" : " ";
-        const highlight = isSelected ? "\x1b[36m" : "";
-        const reset = isSelected ? "\x1b[0m" : "";
-        console.log(`  ${prefix} ${highlight}${agent.name}${reset} - ${agent.description}`);
+    // Check if stdin supports raw mode (TTY)
+    const isTTY = process.stdin.isTTY;
+    
+    if (!isTTY) {
+      // Fallback to simple number input for non-TTY environments
+      console.log("\n  Enter number (1-5): ");
+      const readline = await import("readline");
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
       });
-    };
-    
-    // Initial render
-    AGENTS.forEach((agent, index) => {
-      console.log(`    ${agent.name} - ${agent.description}`);
-    });
-    renderOptions();
-    
-    // Setup stdin for raw input
-    const stdin = process.stdin;
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding("utf8");
+      
+      const answer = await new Promise<string>((resolve) => {
+        rl.question("  > ", (ans) => {
+          rl.close();
+          resolve(ans.trim());
+        });
+      });
+      
+      const index = parseInt(answer, 10) - 1;
+      if (index >= 0 && index < AGENTS.length) {
+        selectedAgent = AGENTS[index];
+        console.log(`\n✓ Selected: ${selectedAgent.name}`);
+      } else {
+        console.error("\n✗ Invalid selection");
+        process.exit(1);
+      }
+    } else {
+      // Full interactive mode with arrow keys
+      // Render options
+      const renderOptions = () => {
+        // Clear previous render
+        process.stdout.write(`\x1b[${AGENTS.length}A\x1b[0J`);
+        
+        AGENTS.forEach((agent, index) => {
+          const isSelected = index === currentIndex;
+          const prefix = isSelected ? "❯" : " ";
+          const highlight = isSelected ? "\x1b[36m" : "";
+          const reset = isSelected ? "\x1b[0m" : "";
+          console.log(`  ${prefix} ${highlight}${agent.name}${reset} - ${agent.description}`);
+        });
+      };
+      
+      // Initial render
+      AGENTS.forEach((agent, index) => {
+        console.log(`    ${agent.name} - ${agent.description}`);
+      });
+      renderOptions();
+      
+      // Setup stdin for raw input
+      const stdin = process.stdin;
+      stdin.setRawMode(true);
+      stdin.resume();
+      stdin.setEncoding("utf8");
     
     // Wait for user input
     selectedAgent = await new Promise<AgentConfig>((resolve) => {
@@ -1129,6 +1136,7 @@ export async function runInit(args: string[]): Promise<void> {
       
       stdin.on("data", onKeyPress);
     });
+    } // End of TTY mode else block
   }
 
   // Create directories

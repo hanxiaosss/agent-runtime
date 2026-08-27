@@ -72,30 +72,6 @@
     "source": "agent-md"
   },
   {
-    "name": "run-migrations-directly-on-production",
-    "description": "run migrations directly on production",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "never-run-migrations-directly-on-production",
-    "description": "Never run migrations directly on production",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "modify-production-configuration-directly",
-    "description": "modify production configuration directly",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "don-t-modify-production-configuration-directly",
-    "description": "Don't modify production configuration directly",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
     "name": "use-console",
     "description": "use console",
     "version": "1.0.0",

@@ -1,17 +1,17 @@
 # Agent Hook 支持能力矩阵
 
-> **重要说明**：并非所有 AI Agent 都支持 Hook 机制。本文档明确说明每个 Agent 的实际支持情况。
+> **所有主流 Agent 都支持 Hook 机制**
 
 ---
 
 ## 支持状态总览
 
-| Agent | Hook 支持 | 配置方式 | 状态 |
+| Agent | Hook 支持 | 配置位置 | 状态 |
 |-------|----------|---------|------|
 | **Claude Code** | ✅ 完整支持 | `.claude/settings.json` | ✅ 可用 |
 | **Qoder** | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
-| **Codex CLI** | ✅ 完整支持 | `.codex/config.json` | ✅ 可用 |
-| **GitHub Copilot** | ❌ 不支持 | N/A | ❌ 不可用 |
+| **Codex CLI** | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
+| **GitHub Copilot** | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
 | **Trae** | ⚠️ 部分支持 | 待验证 | ⚠️ 实验性 |
 
 ---
@@ -85,16 +85,14 @@
 
 **配置方式**：
 ```json
-// .codex/config.json
+// .codex/hooks.json
 {
-  "hooks": {
-    "PreToolUse": [{
-      "command": "node .harness/hooks/handler.mjs pre-tool-use"
-    }],
-    "PostToolUse": [{
-      "command": "node .harness/hooks/handler.mjs post-tool-use"
-    }]
-  }
+  "PreToolUse": [{
+    "command": "node .harness/hooks/handler.mjs pre-tool-use"
+  }],
+  "PostToolUse": [{
+    "command": "node .harness/hooks/handler.mjs post-tool-use"
+  }]
 }
 ```
 
@@ -102,23 +100,48 @@
 
 ---
 
-### ❌ GitHub Copilot（不支持）
+### ✅ GitHub Copilot（完全支持）
 
-**问题**：
-GitHub Copilot **不支持** PreToolUse/PostToolUse 这样的 hook 机制。
+**Hook 类型**：
+- sessionStart - 会话开始时
+- sessionEnd - 会话结束时
+- userPromptSubmitted - 用户提交提示时
+- preToolUse - 工具执行前（可以批准或拒绝）
+- postToolUse - 工具执行后
+- agentStop - Agent 停止时
+- subagentStop - 子 Agent 停止时
+- errorOccurred - 发生错误时
 
-**原因**：
-- Copilot 没有暴露工具执行的拦截点
-- `.github/copilot-instructions.md` 只是给 Copilot 的指令文件，不是 hook 配置
-- Copilot 的执行流程不经过外部 hook 系统
+**配置方式**：
+```json
+// .github/hooks/hooks.json
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [{
+      "type": "command",
+      "bash": "node .harness/hooks/handler.mjs pre-tool-use",
+      "powershell": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "postToolUse": [{
+      "type": "command",
+      "bash": "node .harness/hooks/handler.mjs post-tool-use",
+      "powershell": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
+}
+```
 
-**替代方案**：
-1. **文件监控** - 使用文件系统监控（如 chokidar）检测文件变化
-2. **Git Hooks** - 使用 pre-commit hooks 在提交前检查
-3. **IDE 插件** - 开发 VS Code 插件拦截操作
-4. **代理模式** - 通过代理服务器拦截 API 调用
+**特点**：
+- 使用 `version: 1` 格式
+- 支持 `bash` 和 `powershell` 字段（跨平台）
+- 支持 `cwd`、`env`、`timeoutSec` 等配置
+- Hooks 通过 stdin 接收 JSON 输入
+- 可以通过退出码控制行为（0 = 允许，非 0 = 拒绝）
 
-**状态**：❌ 不可用，需要替代方案
+**状态**：✅ 完全可用
+
+**参考文档**：https://docs.github.com/copilot/customizing-copilot/agents/custom-agents/hooks
 
 ---
 
@@ -135,48 +158,37 @@ GitHub Copilot **不支持** PreToolUse/PostToolUse 这样的 hook 机制。
 
 ## 推荐方案
 
-### 如果你需要 Hook 功能
+### 所有 Agent 都支持 Hooks
 
-**推荐使用**：
-1. **Claude Code** - 最佳选择，完整支持
-2. **Qoder** - 完整支持
-3. **Codex CLI** - 完整支持
+所有主流 Agent 都支持 hooks，可以直接使用：
+- ✅ Claude Code
+- ✅ Qoder
+- ✅ Codex CLI
+- ✅ GitHub Copilot
 
-**不推荐**：
-- **GitHub Copilot** - 不支持 hooks
+### 双重保护（可选）
 
-### 如果你必须使用 Copilot
+如果需要额外保护，可以同时使用文件监控器：
 
-需要使用替代方案：
-
-#### 方案 1：Git Hooks
 ```bash
-# .git/hooks/pre-commit
-#!/bin/bash
-node .harness/hooks/git-hook.mjs
+# 启动文件监控器作为后备保护
+node dist/cli/watcher.js &
 ```
 
-#### 方案 2：文件监控
-```javascript
-// 使用 chokidar 监控文件变化
-import chokidar from 'chokidar';
-
-chokidar.watch('src/**/*').on('change', (path) => {
-  // 检查文件变化是否符合规则
-});
-```
-
-#### 方案 3：IDE 插件
-开发 VS Code 插件，在编辑器层面拦截操作。
+文件监控器会：
+- 实时监控关键文件（agent.md、.harness/ 等）
+- 检测到修改时自动恢复
+- 记录违规行为到 trace 日志
 
 ---
 
 ## 更新日志
 
-### 2026-08-26
-- 明确标注 GitHub Copilot 不支持 hooks
-- 提供替代方案建议
-- 更新能力矩阵
+### 2026-08-27
+- ✅ 确认 GitHub Copilot 支持 hooks
+- ✅ 更新 Copilot 配置格式为 `.github/hooks/hooks.json`
+- ✅ 使用 `version: 1` 格式和 `bash`/`powershell` 字段
+- ✅ 移除 "Copilot 不支持 hooks" 的错误说明
 
 ---
 
@@ -186,9 +198,9 @@ chokidar.watch('src/**/*').on('change', (path) => {
 - ✅ Claude Code
 - ✅ Qoder
 - ✅ Codex CLI
+- ✅ GitHub Copilot
 
-**不支持的 Agent**（需要替代方案）：
-- ❌ GitHub Copilot
+**实验性支持**：
 - ⚠️ Trae（待验证）
 
-**建议**：如果需要完整的 hook 功能，请使用 Claude Code、Qoder 或 Codex CLI。
+**建议**：所有主流 Agent 都支持 hooks，可以根据需求选择合适的 Agent。
