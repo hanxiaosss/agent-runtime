@@ -44,41 +44,41 @@ Every agent runtime maps its native hooks into this canonical event set.
 
 ## 2. Runtime Capability Matrix
 
-| Dimension | Claude Code | Qoder | Codex CLI | Copilot | Trae |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Native event count** | 30+ | 26 | ~10 | 8 | 6 |
-| **Handler types** | command / http / prompt / agent | command / http / prompt / agent | command / mcp_tool | command | command |
-| **Input protocol** | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin |
-| **Output protocol** | exit code + JSON stdout | exit code + JSON stdout | exit code only | exit code only | exit code only |
-| **Blockable events** | PreToolUse, UserPromptSubmit, Stop | PreToolUse, UserPromptSubmit, PermissionRequest, Stop | PreToolUse, Stop | PreToolUse, UserPromptSubmit | PreToolUse, UserPromptSubmit |
-| **Input rewriting** | ✅ `updatedInput` | ✅ `updatedInput` | ❌ | ❌ | ❌ |
-| **Async hooks** | ✅ background | ✅ | ✅ `async: true` | ❌ | ❌ |
-| **Conditional matching** | `toolName` pattern | `toolName` pattern | `toolName` pattern | — | — |
-| **System message injection** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Dimension | Claude Code | Qoder | Codex CLI | Copilot | Trae | Cursor |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Native event count** | 30+ | 26 | ~10 | 8 | 6 | 8 |
+| **Handler types** | command / http / prompt / agent | command / http / prompt / agent | command / mcp_tool | command | command | command |
+| **Input protocol** | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin |
+| **Output protocol** | exit code + JSON stdout | exit code + JSON stdout | exit code only | exit code only | exit code only | exit code + JSON stdout |
+| **Blockable events** | PreToolUse, UserPromptSubmit, Stop | PreToolUse, UserPromptSubmit, PermissionRequest, Stop | PreToolUse, Stop | PreToolUse, UserPromptSubmit | PreToolUse, UserPromptSubmit | PreToolUse, PostToolUse |
+| **Input rewriting** | ✅ `updatedInput` | ✅ `updatedInput` | ❌ | ❌ | ❌ | ✅ `updatedInput` |
+| **Async hooks** | ✅ background | ✅ | ✅ `async: true` | ❌ | ❌ | ❌ |
+| **Conditional matching** | `toolName` pattern | `toolName` pattern | `toolName` pattern | — | — | `toolName` pattern |
+| **System message injection** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 ---
 
 ## 3. Event → Native Mapping
 
-| Unified Event | Claude Code | Qoder | Codex CLI | Copilot | Trae |
-|---|---|---|---|---|---|
-| `skill.before` | PreToolUse (tool ∈ skill set) | PreToolUse (tool ∈ skill set) | PreToolUse (tool ∈ skill set) | PreToolUse | PreToolUse |
-| `skill.after` | PostToolUse (tool ∈ skill set) | PostToolUse (tool ∈ skill set) | PostToolUse (tool ∈ skill set) | PostToolUse | PostToolUse |
-| `mcp.before` | PreToolUse (`mcp__*`) | PreToolUse (`mcp_*`) | PreToolUse (`mcp__*` / `mcp_*`) | PreToolUse (`mcp__*`) | PreToolUse (`mcp__*`) |
-| `mcp.after` | PostToolUse (`mcp__*`) | PostToolUse (`mcp_*`) | PostToolUse | PostToolUse | PostToolUse |
-| `code.before_modify` | PreToolUse (Write/Edit/MultiEdit) | PreToolUse (Write/SearchReplace) | PreToolUse (shell_write_file/shell_edit_file) | PreToolUse (write_file/edit_file) | PreToolUse (write_file/edit_file) |
-| `code.after_modify` | PostToolUse (Write/Edit) | PostToolUse (Write/SearchReplace) | PostToolUse | PostToolUse | PostToolUse |
-| `tool.before` | PreToolUse | PreToolUse | PreToolUse | PreToolUse | PreToolUse |
-| `tool.after` | PostToolUse | PostToolUse | PostToolUse | PostToolUse | PostToolUse |
-| `confirm.before` | Stop | Stop | Stop | — | — |
-| `confirm.after` | SessionEnd | SessionEnd | — | — | — |
-| `api.before` | PreToolUse (WebFetch/curl) | PreToolUse (WebFetch) | PreToolUse (shell_curl/fetch) | PreToolUse (fetch) | — |
-| `api.after` | PostToolUse (WebFetch) | PostToolUse (WebFetch) | PostToolUse | PostToolUse | — |
-| `git.worktree_keep` | WorktreeCreate / custom | WorktreeCreate | — | — | — |
-| `git.worktree_undo` | WorktreeRemove / custom | WorktreeRemove | — | — | — |
-| `task.start` | — | — | — | — | — |
-| `task.before_complete` | — | — | — | — | — |
-| `task.complete` | — | — | — | — | — |
+| Unified Event | Claude Code | Qoder | Codex CLI | Copilot | Trae | Cursor |
+|---|---|---|---|---|---|---|
+| `skill.before` | PreToolUse (tool ∈ skill set) | PreToolUse (tool ∈ skill set) | PreToolUse (tool ∈ skill set) | PreToolUse | PreToolUse | PreToolUse |
+| `skill.after` | PostToolUse (tool ∈ skill set) | PostToolUse (tool ∈ skill set) | PostToolUse (tool ∈ skill set) | PostToolUse | PostToolUse | PostToolUse |
+| `mcp.before` | PreToolUse (`mcp__*`) | PreToolUse (`mcp_*`) | PreToolUse (`mcp__*` / `mcp_*`) | PreToolUse (`mcp__*`) | PreToolUse (`mcp__*`) | PreToolUse (`mcp__*`) |
+| `mcp.after` | PostToolUse (`mcp__*`) | PostToolUse (`mcp_*`) | PostToolUse | PostToolUse | PostToolUse | PostToolUse (`mcp__*`) |
+| `code.before_modify` | PreToolUse (Write/Edit/MultiEdit) | PreToolUse (Write/SearchReplace) | PreToolUse (shell_write_file/shell_edit_file) | PreToolUse (write_file/edit_file) | PreToolUse (write_file/edit_file) | PreToolUse (write_file/edit_file/create_file) |
+| `code.after_modify` | PostToolUse (Write/Edit) | PostToolUse (Write/SearchReplace) | PostToolUse | PostToolUse | PostToolUse | PostToolUse (write_file/edit_file) |
+| `tool.before` | PreToolUse | PreToolUse | PreToolUse | PreToolUse | PreToolUse | PreToolUse |
+| `tool.after` | PostToolUse | PostToolUse | PostToolUse | PostToolUse | PostToolUse | PostToolUse |
+| `confirm.before` | Stop | Stop | Stop | — | — | — |
+| `confirm.after` | SessionEnd | SessionEnd | — | — | — | — |
+| `api.before` | PreToolUse (WebFetch/curl) | PreToolUse (WebFetch) | PreToolUse (shell_curl/fetch) | PreToolUse (fetch) | — | PreToolUse (fetch/curl) |
+| `api.after` | PostToolUse (WebFetch) | PostToolUse (WebFetch) | PostToolUse | PostToolUse | — | PostToolUse (fetch) |
+| `git.worktree_keep` | WorktreeCreate / custom | WorktreeCreate | — | — | — | — |
+| `git.worktree_undo` | WorktreeRemove / custom | WorktreeRemove | — | — | — | — |
+| `task.start` | — | — | — | — | — | — |
+| `task.before_complete` | — | — | — | — | — | — |
+| `task.complete` | — | — | — | — | — | — |
 
 ### Legend
 
@@ -206,6 +206,20 @@ For runtimes that read JSON from stdout (Claude Code, Qoder):
 | **Timeout** | 10s |
 | **Special** | Smallest event surface (6 events); no FileChanged, no PreCompact |
 
+### 5.6 Cursor
+
+| Property | Value |
+|---|---|
+| **Config location** | `.cursor/hooks.json` |
+| **Hook events** | PreToolUse, PostToolUse |
+| **Handler types** | `command` |
+| **Input** | JSON via stdin |
+| **Output** | JSON to stdout + exit code |
+| **Input rewriting** | ✅ via `updatedInput` field |
+| **Async hooks** | ❌ |
+| **Timeout** | 10s |
+| **Special** | Similar to Claude Code but with Cursor-specific tool names (write_file, edit_file, create_file). MCP tools use `mcp__` prefix. Supports input rewriting via `updatedInput`. |
+
 ---
 
 ## 6. Configuration Schema
@@ -231,6 +245,7 @@ interface HookConfig {
     codex?: string;
     copilot?: string;
     trae?: string;
+    cursor?: string;
   };
   /** Condition for when this hook fires */
   condition?: {
@@ -240,7 +255,7 @@ interface HookConfig {
     filePattern?: string;
   };
   /** Which runtimes this hook supports (omit = all) */
-  supportedRuntimes?: Array<"claude" | "qoder" | "codex" | "copilot" | "trae">;
+  supportedRuntimes?: Array<"claude" | "qoder" | "codex" | "copilot" | "trae" | "cursor">;
 }
 ```
 
@@ -255,6 +270,7 @@ interface HookConfig {
 | Codex CLI | exit 0 | exit 2 + stderr message | exit ≠ 0,2 |
 | Copilot | exit 0 | exit 1 + stderr message | — |
 | Trae | exit 0 | exit 1 + stderr message | — |
+| Cursor | exit 0 + `{ "decision": "allow" }` | exit 2 + `{ "decision": "deny", "reason": "..." }` | exit ≠ 0,2 |
 
 ---
 
@@ -281,6 +297,7 @@ interface HookConfig {
 | **Trae** | Only 6 events; no FileChanged, PreCompact | `confirm.after` unavailable; only `before`-class events support blocking |
 | **Codex** | No `prompt`/`agent` handler type | Only `command` + `mcp_tool`; no LLM-driven hook decisions |
 | **Copilot / Trae** | No `updatedInput` (input rewriting) | Can only pass/block; cannot modify tool parameters |
+| **Cursor** | No Stop/SessionEnd hooks | `confirm.before`/`confirm.after` unavailable; no session lifecycle events |
 | **All** | `task.start` / `task.complete` not natively supported | Emulated via session detection or left unsupported |
 | **All** | `skill.before` / `skill.after` require skill-set configuration | Adapter must be configured with the project's skill tool names |
 

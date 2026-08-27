@@ -1082,6 +1082,43 @@ const AGENTS: AgentConfig[] = [
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     },
   },
+  {
+    name: "Cursor",
+    value: "cursor",
+    description: "Cursor AI code editor",
+    configPath: ".cursor/hooks.json",
+    hookConfig: `{
+  "hooks": {
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
+}`,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".cursor");
+      const configPath = path.join(configDir, "hooks.json");
+      
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      const config = {
+        hooks: {
+          PreToolUse: [{
+            command: "node .harness/hooks/handler.mjs pre-tool-use"
+          }],
+          PostToolUse: [{
+            command: "node .harness/hooks/handler.mjs post-tool-use"
+          }]
+        }
+      };
+      
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    },
+  },
 ];
 
 // ─── Init Command Implementation ────────────────────────────────────

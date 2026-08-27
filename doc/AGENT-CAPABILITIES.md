@@ -12,6 +12,7 @@
 | **Qoder** | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
 | **Codex CLI** | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
 | **GitHub Copilot** | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
+| **Cursor** | ✅ 完整支持 | `.cursor/hooks.json` | ✅ 可用 |
 | **Trae** | ⚠️ 部分支持 | 待验证 | ⚠️ 实验性 |
 
 ---
@@ -145,6 +146,38 @@
 
 ---
 
+### ✅ Cursor（完全支持）
+
+**Hook 类型**：
+- PreToolUse - 工具执行前
+- PostToolUse - 工具执行后
+
+**配置方式**：
+```json
+// .cursor/hooks.json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
+}
+```
+
+**特点**：
+- 支持 JSON stdout + exit code 协议（类似 Claude Code）
+- 支持 `updatedInput` 字段进行输入重写
+- 工具名称：`write_file`, `edit_file`, `create_file`
+- MCP 工具使用 `mcp__` 前缀（双下划线）
+- Exit code: 0 = allow, 2 = deny
+
+**状态**：✅ 完全可用
+
+---
+
 ### ⚠️ Trae（部分支持，待验证）
 
 **状态**：⚠️ 实验性支持，需要进一步验证
@@ -165,6 +198,7 @@
 - ✅ Qoder
 - ✅ Codex CLI
 - ✅ GitHub Copilot
+- ✅ Cursor
 
 ### 双重保护（可选）
 
@@ -199,6 +233,7 @@ node dist/cli/watcher.js &
 - ✅ Qoder
 - ✅ Codex CLI
 - ✅ GitHub Copilot
+- ✅ Cursor
 
 **实验性支持**：
 - ⚠️ Trae（待验证）

@@ -2,7 +2,7 @@
  * Demo — Multi-Runtime Closed Loop
  *
  * Demonstrates the complete event → policy → decision → feedback loop
- * across all 5 agent runtime adapters.
+ * across all 6 agent runtime adapters.
  *
  * Run: pnpm demo
  */
@@ -14,6 +14,7 @@ import {
   CodexAdapter,
   CopilotAdapter,
   TraeAdapter,
+  CursorAdapter,
   protectedFilesPolicy,
   mcpSafetyPolicy,
   gitSafetyPolicy,
@@ -43,18 +44,19 @@ function scenario(name: string): void {
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
   console.log("║   Agent Runtime — Multi-Runtime Closed Loop Demo        ║");
-  console.log("║   5 Adapters → Unified Events → Policy → Decision       ║");
+  console.log("║   6 Adapters → Unified Events → Policy → Decision       ║");
   console.log("╚══════════════════════════════════════════════════════════╝");
 
   // 1. Create the runtime
   const runtime = new AgentRuntime({ debug: false });
 
-  // 2. Create all 5 adapters
+  // 2. Create all 6 adapters
   const claude = new ClaudeCodeAdapter();
   const qoder = new QoderAdapter();
   const codex = new CodexAdapter();
   const copilot = new CopilotAdapter();
   const trae = new TraeAdapter();
+  const cursor = new CursorAdapter();
 
   // Attach all to the same runtime
   claude.attachRuntime(runtime);
@@ -62,6 +64,7 @@ async function main() {
   codex.attachRuntime(runtime);
   copilot.attachRuntime(runtime);
   trae.attachRuntime(runtime);
+  cursor.attachRuntime(runtime);
 
   // Register adapters
   runtime.registerAdapter(claude);
@@ -69,6 +72,7 @@ async function main() {
   runtime.registerAdapter(codex);
   runtime.registerAdapter(copilot);
   runtime.registerAdapter(trae);
+  runtime.registerAdapter(cursor);
 
   // 3. Load policies
   runtime.loadPolicy(protectedFilesPolicy);
@@ -80,10 +84,10 @@ async function main() {
   await runtime.start();
 
   // ═══════════════════════════════════════════════════════════════════
-  // PART 1: Same scenario across all 5 adapters
+  // PART 1: Same scenario across all 6 adapters
   // ═══════════════════════════════════════════════════════════════════
 
-  divider("Part 1: Agent tries to modify .env — across all 5 runtimes");
+  divider("Part 1: Agent tries to modify .env — across all 6 runtimes");
 
   const adapters = [
     { name: "Claude Code", adapter: claude, fileTools: ["Write", "Edit", "MultiEdit"] },
@@ -91,6 +95,7 @@ async function main() {
     { name: "Codex CLI", adapter: codex, fileTools: ["shell_write_file", "shell_edit_file"] },
     { name: "Copilot", adapter: copilot, fileTools: ["write_file", "edit_file"] },
     { name: "Trae", adapter: trae, fileTools: ["write_file", "edit_file"] },
+    { name: "Cursor", adapter: cursor, fileTools: ["write_file", "edit_file"] },
   ];
 
   for (const { name, adapter, fileTools } of adapters) {
@@ -115,7 +120,7 @@ async function main() {
   // PART 2: MCP safety across runtimes
   // ═══════════════════════════════════════════════════════════════════
 
-  divider("Part 2: Agent tries MCP database write — across all 5 runtimes");
+  divider("Part 2: Agent tries MCP database write — across all 6 runtimes");
 
   const mcpTests = [
     { name: "Claude Code", adapter: claude, mcpTool: "mcp__database__write" },
@@ -123,6 +128,7 @@ async function main() {
     { name: "Codex CLI", adapter: codex, mcpTool: "mcp__database__write" },
     { name: "Copilot", adapter: copilot, mcpTool: "mcp__database__write" },
     { name: "Trae", adapter: trae, mcpTool: "mcp__database__write" },
+    { name: "Cursor", adapter: cursor, mcpTool: "mcp__database__write" },
   ];
 
   for (const { name, adapter, mcpTool } of mcpTests) {
@@ -144,7 +150,7 @@ async function main() {
   // PART 3: Git safety (force push)
   // ═══════════════════════════════════════════════════════════════════
 
-  divider("Part 3: Agent tries git push --force — across all 5 runtimes");
+  divider("Part 3: Agent tries git push --force — across all 6 runtimes");
 
   const gitTests = [
     { name: "Claude Code", adapter: claude, bashTool: "Bash" },
@@ -152,6 +158,7 @@ async function main() {
     { name: "Codex CLI", adapter: codex, bashTool: "shell" },
     { name: "Copilot", adapter: copilot, bashTool: "terminal" },
     { name: "Trae", adapter: trae, bashTool: "terminal" },
+    { name: "Cursor", adapter: cursor, bashTool: "terminal" },
   ];
 
   for (const { name, adapter, bashTool } of gitTests) {
@@ -220,7 +227,7 @@ async function main() {
   // PART 6: Capability Matrix comparison
   // ═══════════════════════════════════════════════════════════════════
 
-  divider("Part 6: Capability Matrix — all 5 adapters");
+  divider("Part 6: Capability Matrix — all 6 adapters");
 
   const matrix = runtime.getCapabilityMatrix();
 

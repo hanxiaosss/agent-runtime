@@ -89,6 +89,11 @@ export {
   TraeAdapter,
   runTraeCLI,
   type TraeHookInput,
+  // Cursor
+  CursorAdapter,
+  runCursorCLI,
+  type CursorHookInput,
+  type CursorHookOutput,
 } from "./adapters/index.js";
 
 // Policies

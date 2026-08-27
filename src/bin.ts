@@ -36,7 +36,7 @@ function printHelp(): void {
 
   Commands:
     init [dir] [options]    Generate .harness/ directory (default: cwd)
-      --agent=<name>          Select agent: claude-code, copilot, qoder, codex, trae
+      --agent=<name>          Select agent: claude-code, copilot, qoder, codex, trae, cursor
     sync [dir]              Synchronize semantic hooks with project rules
     watch                   Start file system watcher for redline protection
     trace [options]         View agent runtime traces

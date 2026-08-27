@@ -4,12 +4,12 @@
 
 ## Overview
 
-Hannah Agent Runtime provides a unified control plane for AI coding agents (Claude Code, Codex, Qoder, Copilot, Trae). It intercepts agent actions through a standardized hook system, applies declarative policies, and generates observable traces.
+Hannah Agent Runtime provides a unified control plane for AI coding agents (Claude Code, Codex, Qoder, Copilot, Trae, Cursor). It intercepts agent actions through a standardized hook system, applies declarative policies, and generates observable traces.
 
 ### Key Features
 
 - **Universal Event Taxonomy**: 19 canonical event types across 9 categories
-- **5 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae
+- **6 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae, Cursor
 - **Declarative Policies**: YAML-based security rules
 - **Semantic Hook System**: Project-level rules extracted from agent.md
 - **Tech Stack Detection**: Automatic hook generation based on your stack
@@ -31,7 +31,7 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 │         ▼                    ▼                    ▼          │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Adapter Layer                           │   │
-│  │  Claude Code │ Codex │ Qoder │ Copilot │ Trae       │   │
+│  │  Claude Code │ Codex │ Qoder │ Copilot │ Trae │ Cursor│  │
 │  └─────────────────────────────────────────────────────┘   │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
@@ -40,7 +40,7 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 ## Features
 
 - **Universal Event Taxonomy**: 19 canonical event types (tool.before, code.before_modify, mcp.before, etc.)
-- **5 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae
+- **6 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae, Cursor
 - **Declarative Policies**: YAML-based security rules
 - **Semantic Hook System**: Project-level rules extracted from agent.md
 - **Tech Stack Detection**: Automatic hook generation based on your stack
@@ -58,6 +58,7 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 | Qoder | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
 | Codex CLI | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
 | GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
+| Cursor | ✅ 完整支持 | `.cursor/hooks.json` | ✅ 可用 |
 | Trae | ⚠️ 待验证 | 待确认 | ⚠️ 实验性 |
 
 **详细说明**：参见 [Agent 能力矩阵](doc/AGENT-CAPABILITIES.md)
@@ -334,7 +335,7 @@ rules:
 Generate `.harness/` directory with policies, hooks, and semantic hooks.
 
 Options:
-- `--agent=<name>` - Select agent directly (claude-code, copilot, qoder, codex, trae)
+- `--agent=<name>` - Select agent directly (claude-code, copilot, qoder, codex, trae, cursor)
 
 What it does:
 - Creates `.harness/` directory structure
@@ -398,6 +399,7 @@ hannah/
 │   │   ├── codex.ts
 │   │   ├── qoder.ts
 │   │   ├── copilot.ts
+│   │   ├── cursor.ts
 │   │   └── trae.ts
 │   ├── policies/          # Built-in policies
 │   ├── cli/               # CLI commands

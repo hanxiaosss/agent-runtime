@@ -25,3 +25,7 @@ export type { CopilotHookInput } from "./copilot.js";
 // Trae
 export { TraeAdapter, runTraeCLI } from "./trae.js";
 export type { TraeHookInput } from "./trae.js";
+
+// Cursor
+export { CursorAdapter, runCursorCLI } from "./cursor.js";
+export type { CursorHookInput, CursorHookOutput } from "./cursor.js";
