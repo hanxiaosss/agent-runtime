@@ -1204,12 +1204,167 @@ export async function runInit(args: string[]): Promise<void> {
     console.log(`  ⚠ Semantic hook initialization skipped: ${err.message}`);
   }
 
+  // VSCode extension setup
+  const withVSCode = optionArgs.includes("--with-vscode");
+  const vscodeOnly = optionArgs.includes("--vscode-only");
+  
+  if (withVSCode || vscodeOnly) {
+    console.log("\n  ✓ Setting up VSCode extension...");
+    await setupVSCodeExtension(targetDir, harnessDir);
+  }
+
   console.log("");
   console.log("Done! Next steps:");
   console.log("");
   console.log("  1. Install hannah-agent-runtime:  npm install -D hannah-agent-runtime");
   console.log(`  2. Agent configuration generated: ${selectedAgent.configPath}`);
-  console.log("  3. Sync semantic hooks:           hannah sync");
-  console.log("  4. View traces:                   hannah trace");
+  
+  if (withVSCode) {
+    console.log("  3. Install VSCode extension:      See .vscode/README.md");
+    console.log("  4. Sync semantic hooks:           hannah sync");
+    console.log("  5. View traces:                   hannah trace (or VSCode sidebar)");
+  } else {
+    console.log("  3. Sync semantic hooks:           hannah sync");
+    console.log("  4. View traces:                   hannah trace");
+  }
+  
+  if (withVSCode) {
+    console.log("");
+    console.log("  💡 Tip: Open VSCode and press Ctrl+Shift+P → 'View: Show Secondary Sidebar'");
+    console.log("     to see the Agent Runtime trace panel.");
+  }
+  
   console.log("");
+}
+
+// ─── VSCode Extension Setup ─────────────────────────────────────────
+
+async function setupVSCodeExtension(targetDir: string, harnessDir: string): Promise<void> {
+  const vscodeDir = path.join(targetDir, ".vscode");
+  
+  // Create .vscode directory if it doesn't exist
+  if (!fs.existsSync(vscodeDir)) {
+    fs.mkdirSync(vscodeDir, { recursive: true });
+  }
+
+  // Generate VSCode settings
+  const settingsPath = path.join(vscodeDir, "settings.json");
+  let settings: any = {};
+  
+  if (fs.existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    } catch {
+      // ignore
+    }
+  }
+
+  // Add agent-runtime settings
+  settings["agentRuntime.traceDir"] = ".harness/traces";
+  settings["agentRuntime.autoRefresh"] = true;
+  settings["agentRuntime.maxEntries"] = 100;
+
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  console.log(`  ✓ Generated .vscode/settings.json`);
+
+  // Generate extension installation guide
+  const readmePath = path.join(vscodeDir, "README.md");
+  const readme = `# Agent Runtime VSCode Extension
+
+## Installation
+
+### Option 1: From Source (Development)
+
+\`\`\`bash
+cd editors/vscode
+npm install
+npm run compile
+code --install-extension agent-runtime-trace-0.1.0.vsix
+\`\`\`
+
+### Option 2: Manual Copy
+
+1. Open VSCode
+2. Press \`Ctrl+Shift+P\` (or \`Cmd+Shift+P\` on Mac)
+3. Type "Extensions: Install from VSIX..."
+4. Select the \`.vsix\` file from \`editors/vscode/\`
+
+## Usage
+
+1. Open your project in VSCode
+2. Press \`Ctrl+Shift+P\` → "View: Show Secondary Sidebar"
+3. Look for the "Agent Runtime" panel
+4. The tool call chain will appear automatically
+
+## Features
+
+- 📊 **Real-time Trace**: Automatically refreshes when new traces are written
+- 🌳 **Tree View**: Hierarchical display of sessions → tools → events
+- 🎨 **Visual Indicators**: 
+  - ✅ Green check for allowed actions
+  - ❌ Red X for denied actions
+  - ⚠️ Yellow warning for warnings
+- 🔍 **Filtering**: Click the filter icon to show only denied events
+- 📋 **Tooltips**: Hover over any item for detailed information
+
+## Configuration
+
+Settings are in \`.vscode/settings.json\`:
+
+\`\`\`json
+{
+  "agentRuntime.traceDir": ".harness/traces",
+  "agentRuntime.autoRefresh": true,
+  "agentRuntime.maxEntries": 100
+}
+\`\`\`
+
+## Commands
+
+- \`Agent Runtime: Refresh Trace\` - Manually refresh the trace view
+- \`Agent Runtime: Clear Trace\` - Clear the current view
+- \`Agent Runtime: Show Denied Only\` - Toggle filter for denied events
+
+## Troubleshooting
+
+### Extension not showing?
+
+1. Make sure \`.harness/traces/\` directory exists
+2. Check VSCode Output panel: View → Output → "Agent Runtime Trace"
+3. Try reloading VSCode window: \`Ctrl+Shift+P\` → "Developer: Reload Window"
+
+### No traces appearing?
+
+1. Run your agent with hooks enabled
+2. Check that traces are being written to \`.harness/traces/*.jsonl\`
+3. Verify \`agentRuntime.traceDir\` setting points to the correct directory
+`;
+
+  fs.writeFileSync(readmePath, readme);
+  console.log(`  ✓ Generated .vscode/README.md`);
+
+  // Check if VSCode is installed
+  const vscodeInstalled = checkVSCodeInstalled();
+  
+  if (vscodeInstalled) {
+    console.log(`  ✓ VSCode detected`);
+    console.log("");
+    console.log("  📦 To install the extension:");
+    console.log("     1. Build: cd editors/vscode && npm install && npm run compile");
+    console.log("     2. Package: npx vsce package");
+    console.log("     3. Install: code --install-extension agent-runtime-trace-0.1.0.vsix");
+  } else {
+    console.log(`  ⚠ VSCode not detected in PATH`);
+    console.log("     You can still install the extension manually. See .vscode/README.md");
+  }
+}
+
+function checkVSCodeInstalled(): boolean {
+  try {
+    const { execSync } = require("child_process");
+    execSync("code --version", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }

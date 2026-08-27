@@ -1,0 +1,107 @@
+{
+  "name": "agent-runtime-trace",
+  "displayName": "Agent Runtime Trace",
+  "description": "Observable tool call chain for AI agents in VSCode Secondary Sidebar",
+  "version": "0.1.0",
+  "publisher": "agent-runtime",
+  "engines": {
+    "vscode": "^1.79.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onView:agentRuntime.traceView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "agentRuntime",
+          "title": "Agent Runtime",
+          "icon": "$(eye)"
+        }
+      ]
+    },
+    "views": {
+      "agentRuntime": [
+        {
+          "id": "agentRuntime.traceView",
+          "name": "Tool Call Chain",
+          "icon": "$(list-tree)",
+          "contextualTitle": "Agent Runtime Trace"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentRuntime.refresh",
+        "title": "Refresh Trace",
+        "category": "Agent Runtime",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentRuntime.clear",
+        "title": "Clear Trace",
+        "category": "Agent Runtime",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "agentRuntime.filterDenied",
+        "title": "Show Denied Only",
+        "category": "Agent Runtime",
+        "icon": "$(filter)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentRuntime.refresh",
+          "when": "view == agentRuntime.traceView",
+          "group": "navigation"
+        },
+        {
+          "command": "agentRuntime.filterDenied",
+          "when": "view == agentRuntime.traceView",
+          "group": "navigation"
+        },
+        {
+          "command": "agentRuntime.clear",
+          "when": "view == agentRuntime.traceView"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Agent Runtime",
+      "properties": {
+        "agentRuntime.traceDir": {
+          "type": "string",
+          "default": ".harness/traces",
+          "description": "Path to trace directory (relative to workspace root)"
+        },
+        "agentRuntime.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh trace view when files change"
+        },
+        "agentRuntime.maxEntries": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of trace entries to display"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "@types/vscode": "^1.79.0",
+    "typescript": "^5.6.0"
+  }
+}
