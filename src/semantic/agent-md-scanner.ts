@@ -55,17 +55,63 @@ const RULE_PATTERNS = [
 ];
 
 /**
- * Scan project for agent instruction files
+ * Scan project for agent instruction files (recursively)
  */
 export function findAgentFiles(projectRoot: string): string[] {
   const found: string[] = [];
   
-  for (const file of AGENT_FILES) {
-    const fullPath = path.join(projectRoot, file);
-    if (fs.existsSync(fullPath)) {
-      found.push(fullPath);
+  // File names to match (lowercase for case-insensitive comparison)
+  const targetFiles = new Set([
+    'agent.md',
+    'agents.md',
+    '.agent.md',
+    '.agents.md',
+    'claude.md',
+    'copilot.md',
+    '.cursorrules',
+  ]);
+  
+  // Directories to skip
+  const skipDirs = new Set([
+    'node_modules',
+    '.git',
+    '.harness',
+    '.vscode',
+    'dist',
+    'build',
+    '.next',
+    '.nuxt',
+    'coverage',
+    '.cache',
+  ]);
+  
+  function scanDirectory(dir: string): void {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        
+        if (entry.isDirectory()) {
+          // Skip common non-essential directories
+          if (!skipDirs.has(entry.name.toLowerCase())) {
+            scanDirectory(fullPath);
+          }
+        } else if (entry.isFile()) {
+          // Check if file name matches (case-insensitive)
+          const lowerName = entry.name.toLowerCase();
+          if (targetFiles.has(lowerName)) {
+            found.push(fullPath);
+          }
+        }
+      }
+    } catch {
+      // Ignore permission errors or other read errors
     }
   }
+  
+  // Start recursive scan from project root
+  scanDirectory(projectRoot);
   
   return found;
 }
