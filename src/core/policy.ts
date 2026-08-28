@@ -53,16 +53,39 @@ export interface PolicyDefinition {
 /**
  * Simple glob matcher supporting * and **
  * - * matches any sequence of non-separator characters
- * - ** matches any sequence of characters including separators
+ * - ** matches any sequence of characters including separators (zero or more path segments)
  */
 function globMatch(pattern: string, value: string): boolean {
-  // Convert glob to regex
-  const regexStr = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex chars (except * and ?)
-    .replace(/\*\*/g, "{{GLOBSTAR}}")
-    .replace(/\*/g, "[^/\\\\]*")
-    .replace(/\?/g, ".")
-    .replace(/\{\{GLOBSTAR\}\}/g, ".*");
+  // Convert glob to regex character by character
+  let regexStr = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === "*") {
+      if (pattern[i + 1] === "*") {
+        // **
+        if (pattern[i + 2] === "/") {
+          // **/ - matches zero or more path segments
+          regexStr += "(.+/)?";
+          i += 2;
+        } else {
+          // ** at end - matches everything
+          regexStr += ".*";
+          i += 1;
+        }
+      } else {
+        // * - matches anything except path separators
+        regexStr += "[^/\\\\]*";
+      }
+    } else if (c === "?") {
+      regexStr += ".";
+    } else if ("." === c || "+" === c || "^" === c || "$" === c ||
+               "{" === c || "}" === c || "(" === c || ")" === c ||
+               "|" === c || "[" === c || "]" === c || "\\" === c) {
+      regexStr += "\\" + c;
+    } else {
+      regexStr += c;
+    }
+  }
 
   const regex = new RegExp(`^${regexStr}$`, "i");
   return regex.test(value);

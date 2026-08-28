@@ -22,5 +22,65 @@
     "description": "Prevent direct production modifications",
     "version": "1.0.0",
     "source": "tech-stack"
+  },
+  {
+    "name": "commit",
+    "description": "commit",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "don-t-commit-env-files",
+    "description": "Don't commit .env files",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "use-eval-with-user-input",
+    "description": "use eval() with user input",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "never-use-eval-with-user-input",
+    "description": "Never use eval() with user input",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "run-migrations-directly-on-production",
+    "description": "run migrations directly on production",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "never-run-migrations-directly-on-production",
+    "description": "Never run migrations directly on production",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "backup-before-schema-changes",
+    "description": "backup before schema changes",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "always-backup-before-schema-changes",
+    "description": "Always backup before schema changes",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "modify-production-config-directly",
+    "description": "modify production config directly",
+    "version": "1.0.0",
+    "source": "agent-md"
+  },
+  {
+    "name": "don-t-modify-production-config-directly",
+    "description": "Don't modify production config directly",
+    "version": "1.0.0",
+    "source": "agent-md"
   }
 ]

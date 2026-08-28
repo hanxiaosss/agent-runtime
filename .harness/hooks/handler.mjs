@@ -183,6 +183,10 @@ async function setup() {
   adapter.attachRuntime(agentRuntime);
   debug("Using adapter:", adapterName);
   
+  // Start the runtime to register the policy engine hook
+  await agentRuntime.start();
+  debug("Runtime started with policy engine");
+  
   // ─── Load Semantic Hook Engine ──────────────────────────────────────
   let semanticEngine = null;
   try {

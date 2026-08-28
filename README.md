@@ -52,19 +52,20 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 
 > **所有 Agent 都支持 Hook 机制**
 
-| Agent | Hook 支持 | 配置位置 | 状态 |
-|-------|----------|---------|------|
-| Claude Code | ✅ 完整支持 | `.claude/settings.json` | ✅ 可用 |
-| Qoder | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
-| Codex CLI | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
-| GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
-| Cursor | ⚠️ 待验证 | `.cursor/hooks.json` | ⚠️ 待验证 |
-| Trae | ⚠️ 待验证 | 待确认 | ⚠️ 实验性 |
+| Agent | Hook 支持 | 配置位置 | 配置格式 | 状态 |
+|-------|----------|---------|---------|------|
+| Claude Code | ✅ 完整支持 | `.claude/settings.json` | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用 |
+| Qoder | ✅ 完整支持 | `.qoder/settings.json` | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用 |
+| Codex CLI | ✅ 完整支持 | `.codex/hooks.json` | `{ description, hooks: { matcher, PreToolUse: [{ command }] } }` | ✅ 可用 |
+| GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | `{ version: 1, hooks: { preToolUse: [{ type, bash, powershell }] } }` | ✅ 可用 |
+| Cursor | ⚠️ 待验证 | `.cursor/hooks.json` | `{ hooks: { PreToolUse: [{ command }] } }` | ⚠️ 待验证 |
+| Trae | ⚠️ 待验证 | `.trae/settings.json` | `{ hooks: { PreToolUse: [{ command }] } }` | ⚠️ 实验性 |
 
 **重要说明**：
-- ⚠️ **VSCode Copilot Agent Mode** 目前**可能不支持** hooks（与 GitHub.com Copilot Agent 不同）
+- **Codex CLI** 的 `hooks.json` 格式要求顶层包含 `description` 和 `hooks` 字段，`hooks` 内部需包含 `matcher` 和各事件（`PreToolUse`/`PostToolUse` 等）
+- **GitHub Copilot** 使用 `preToolUse`（小驼峰）而非 `PreToolUse`，且需指定 `version: 1` 和平台命令（`bash`/`powershell`）
 - ⚠️ **Cursor Agent** 目前**可能不支持** hooks（配置了但 agent 没有调用）
-- 如果你在 VSCode 中使用 Copilot Agent Mode 或在 Cursor 中使用 Agent Mode 且 hook 没有触发，请参考诊断指南
+- 如果你在 Cursor 中使用 Agent Mode 且 hook 没有触发，请参考诊断指南
 - 替代方案：使用文件监控器 `node dist/cli/watcher.js` 或其他支持 hooks 的 Agent（如 Claude Code）
 
 **详细说明**：参见 [Agent 能力矩阵](doc/AGENT-CAPABILITIES.md)
@@ -241,10 +242,11 @@ Hannah automatically extracts these rules and creates semantic hooks.
 
 5. **Adapters** (`src/adapters/`)
    - Claude Code: Full hook support (PreToolUse, PostToolUse, Stop)
-   - Codex: Exit code protocol, async hooks
+   - Codex: Exit code protocol, async hooks, matcher-based hooks (`{ description, hooks: { matcher, events } }`)
    - Qoder: Input rewriting, permission requests
-   - Copilot: Basic PreToolUse/PostToolUse
+   - Copilot: PreToolUse/PostToolUse with platform-specific commands (`bash`/`powershell`), `version: 1` format
    - Trae: Minimal event surface
+   - Cursor: PreToolUse/PostToolUse hooks
 
 ### Event Flow
 

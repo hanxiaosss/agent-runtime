@@ -168,7 +168,8 @@ For runtimes that read JSON from stdout (Claude Code, Qoder):
 
 | Property | Value |
 |---|---|
-| **Config location** | `.codex/hooks.json` or `codex.json` |
+| **Config location** | `.codex/hooks.json` |
+| **Config format** | `{ description, hooks: { matcher, PreToolUse, PostToolUse, ... } }` |
 | **Hook events** | PreToolUse, PostToolUse, Stop |
 | **Handler types** | `command`, `mcp_tool` |
 | **Input** | JSON via stdin |
@@ -176,21 +177,22 @@ For runtimes that read JSON from stdout (Claude Code, Qoder):
 | **Input rewriting** | ❌ |
 | **Async hooks** | ✅ via `async: true` flag |
 | **Timeout** | 10s |
-| **Special** | No JSON output; supports `mcp_tool` handler type for MCP-specific hooks |
+| **Special** | 顶层必须包含 `description` 和 `hooks` 字段；`hooks` 内需包含 `matcher`；支持 `mcp_tool` handler type |
 
 ### 5.4 Copilot
 
 | Property | Value |
 |---|---|
-| **Config location** | `.github/copilot-settings.json` |
-| **Hook events** | PreToolUse, PostToolUse, UserPromptSubmit |
+| **Config location** | `.github/hooks/hooks.json` |
+| **Config format** | `{ version: 1, hooks: { preToolUse: [{ type, bash, powershell }] } }` |
+| **Hook events** | preToolUse, postToolUse, userPromptSubmit（小驼峰命名） |
 | **Handler types** | `command` |
 | **Input** | JSON via stdin |
 | **Output** | Exit code only (stderr for feedback) |
 | **Input rewriting** | ❌ |
 | **Async hooks** | ❌ |
 | **Timeout** | 10s |
-| **Special** | Most limited of the "big 3"; no worktree, no permission, no session lifecycle |
+| **Special** | 需指定 `version: 1`；事件名使用小驼峰（`preToolUse` 而非 `PreToolUse`）；命令需分 `bash`/`powershell` 两个平台配置 |
 
 ### 5.5 Trae
 
