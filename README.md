@@ -58,8 +58,14 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 | Qoder | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
 | Codex CLI | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
 | GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
-| Cursor | ✅ 完整支持 | `.cursor/hooks.json` | ✅ 可用 |
+| Cursor | ⚠️ 待验证 | `.cursor/hooks.json` | ⚠️ 待验证 |
 | Trae | ⚠️ 待验证 | 待确认 | ⚠️ 实验性 |
+
+**重要说明**：
+- ⚠️ **VSCode Copilot Agent Mode** 目前**可能不支持** hooks（与 GitHub.com Copilot Agent 不同）
+- ⚠️ **Cursor Agent** 目前**可能不支持** hooks（配置了但 agent 没有调用）
+- 如果你在 VSCode 中使用 Copilot Agent Mode 或在 Cursor 中使用 Agent Mode 且 hook 没有触发，请参考诊断指南
+- 替代方案：使用文件监控器 `node dist/cli/watcher.js` 或其他支持 hooks 的 Agent（如 Claude Code）
 
 **详细说明**：参见 [Agent 能力矩阵](doc/AGENT-CAPABILITIES.md)
 

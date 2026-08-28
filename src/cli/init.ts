@@ -55,6 +55,9 @@ rules:
           - "**/*.env"
     action: deny
     feedback: "Cannot modify environment files (.env). These contain secrets and must be edited manually."
+    suggestions:
+      - "Ask the human user to edit .env files"
+      - "Use environment variables instead"
 
   - name: block-lock-files
     when: code.before_modify
@@ -66,6 +69,8 @@ rules:
           - "**/yarn.lock"
     action: deny
     feedback: "Cannot modify lock files directly. Run the package manager instead."
+    suggestions:
+      - "Use npm install, pnpm add, yarn add, etc."
 
   - name: block-core-files
     when: code.before_modify
@@ -76,6 +81,8 @@ rules:
           - "src/kernel/**"
     action: deny
     feedback: "Core module files require human review. Changes to core modules need explicit approval."
+    suggestions:
+      - "Ask for human review before modifying core files"
 
   - name: warn-config-changes
     when: code.before_modify
@@ -86,6 +93,9 @@ rules:
           - "**/package.json"
     action: warn
     feedback: "You are modifying a project configuration file. Ensure this is intentional."
+    suggestions:
+      - "Verify the changes are necessary"
+      - "Document the reason for changes"
 `;
 
 const MCP_SAFETY_YAML = `# MCP Safety Policy
@@ -108,6 +118,8 @@ rules:
           - "truncate"
     action: deny
     feedback: "Direct database write operations are not allowed. Use the application API layer."
+    suggestions:
+      - "Use the application API instead of direct database access"
 
   - name: warn-database-reads
     when: mcp.before
@@ -116,6 +128,9 @@ rules:
         pattern: "database"
     action: warn
     feedback: "Database access detected. Ensure queries are read-only."
+    suggestions:
+      - "Ensure queries are read-only"
+      - "Don't expose sensitive data"
 
   - name: block-filesystem-delete
     when: mcp.before
@@ -129,6 +144,8 @@ rules:
           - "unlink"
     action: deny
     feedback: "File deletion through MCP is not allowed."
+    suggestions:
+      - "Use the application API for file operations"
 `;
 
 const GIT_SAFETY_YAML = `# Git Safety Policy
@@ -151,8 +168,12 @@ rules:
         pattern:
           - "*push --force*"
           - "*push -f*"
-    action: deny
-    feedback: "Force push (git push --force) is not allowed. Use regular push or push with lease."
+    action: modify
+    feedback: "Force push is not allowed. Use regular push or push with lease."
+    modifiedInput:
+      command: "git push --force-with-lease"
+    suggestions:
+      - "Use git push --force-with-lease instead"
 
   - name: block-hard-reset
     when: tool.before
@@ -167,6 +188,9 @@ rules:
         pattern: "*reset --hard*"
     action: deny
     feedback: "git reset --hard is not allowed. This discards uncommitted changes permanently."
+    suggestions:
+      - "Use git stash instead"
+      - "Use git checkout to discard specific files"
 
   - name: block-main-push
     when: tool.before
@@ -183,6 +207,9 @@ rules:
           - "*push*master*"
     action: deny
     feedback: "Direct push to main/master is not allowed. Use feature branches and pull requests."
+    suggestions:
+      - "Create a feature branch"
+      - "Use pull requests for code review"
 `;
 
 const HANDLER_MJS = `#!/usr/bin/env node
@@ -444,6 +471,8 @@ function evaluatePolicies(policies, eventName, eventPayload) {
           action: matched.action,
           reason: matched.reason || matched.feedback || \`Blocked by policy: \${policy.name}\`,
           feedback: matched.feedback || matched.reason || "",
+          suggestions: matched.suggestions || [],
+          modifiedInput: matched.modifiedInput || null,
           policy: policy.name,
           rule: matched.name || "unnamed",
         };
@@ -581,10 +610,14 @@ function buildEvents(input, phase) {
 function writeTrace(eventName, payload, action, feedback) {
   try {
     fs.mkdirSync(TRACE_DIR, { recursive: true });
-    const date = new Date().toISOString().slice(0, 10);
+    // Use local time for date filename (not UTC)
+    const now = new Date();
+    const date = now.getFullYear() + "-" +
+      String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0");
     const traceFile = path.join(TRACE_DIR, date + ".jsonl");
     const entry = {
-      timestamp: new Date().toISOString(),
+      timestamp: now.toISOString(),
       event: eventName,
       source: "hannah",
       action: action,
@@ -596,6 +629,175 @@ function writeTrace(eventName, payload, action, feedback) {
   } catch (err) {
     debug("Failed to write trace:", err.message);
   }
+}
+
+// ─── Semantic Rule Engine (built-in) ────────────────────────────────
+// Zero-dependency semantic rule matching across all dimensions.
+
+const BUILT_IN_RULES = [
+  // ── Redline: agent instruction files ──
+  { name: "redline-agent-files", action: "deny",
+    feedback: "You cannot modify agent instruction files. These define your behavior and must only be changed by the human user.",
+    suggestions: ["Continue without modifying instruction files"],
+    match: { file_path: ["**/agent.md", "**/AGENT.md", "**/.agent.md", "**/agents.md", "**/AGENTS.md", "**/CLAUDE.md", "**/COPILOT.md", "**/.cursorrules", "**/.cursor/rules.md"] } },
+  // ── Redline: harness config ──
+  { name: "redline-harness-config", action: "deny",
+    feedback: "You cannot modify .harness/ configuration. This directory contains runtime guard policies and hooks.",
+    suggestions: ["Continue without modifying .harness/ files"],
+    match: { file_path: ["**/.harness/**"] } },
+  // ── Environment files ──
+  { name: "env-protection", action: "deny",
+    feedback: "Environment files are protected. They may contain secrets and must be edited manually.",
+    suggestions: ["Ask the human user to edit .env files"],
+    match: { file_path: ["**/.env", "**/.env.*", "**/*.env"] } },
+  // ── Lock files ──
+  { name: "lock-file-protection", action: "deny",
+    feedback: "Lock files are auto-generated. Use the package manager instead of editing directly.",
+    suggestions: ["Use npm install, pnpm add, yarn add, etc."],
+    match: { file_path: ["**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock", "**/poetry.lock", "**/Gemfile.lock", "**/Cargo.lock", "**/go.sum"] } },
+  // ── Production config ──
+  { name: "production-config", action: "deny",
+    feedback: "Production configuration must be changed through the deployment pipeline, not directly.",
+    suggestions: ["Modify staging/dev configuration first", "Use CI/CD pipeline for production deployment"],
+    match: { file_path: ["**/production.yaml", "**/production.yml", "**/production.json", "**/production.env", "**/prod.yaml", "**/prod.yml", "**/prod.json", "**/prod.env", "**/production/**", "**/prod/**"] } },
+  // ── Dangerous shell ──
+  { name: "dangerous-rm", action: "modify",
+    feedback: "Destructive rm commands are blocked.",
+    modifiedInput: { command: "echo 'Blocked: dangerous rm command'" },
+    suggestions: ["Use specific file paths instead of wildcards", "Use rm -i for interactive deletion"],
+    match: { command: ["rm -rf /", "rm -rf ~", "rm -rf .", "rm -rf *"] } },
+  { name: "dangerous-git-force", action: "modify",
+    feedback: "Force push is not allowed. Use regular push or push with lease.",
+    modifiedInput: { command: "git push --force-with-lease" },
+    suggestions: ["Use git push --force-with-lease instead"],
+    match: { command: ["git push --force", "git push -f"] } },
+  // ── Dangerous DB ──
+  { name: "dangerous-db-drop", action: "modify",
+    feedback: "Destructive database operations (DROP/TRUNCATE) are blocked.",
+    modifiedInput: { content: "-- Blocked: Use ALTER TABLE or conditional DELETE instead" },
+    suggestions: ["Use ALTER TABLE instead", "Add conditional checks before DELETE"],
+    match: { content: ["DROP TABLE", "DROP DATABASE", "TRUNCATE TABLE"] } },
+  // ── Secrets ──
+  { name: "secret-password", action: "deny",
+    feedback: "Hardcoded passwords detected. Use environment variables or a secrets manager.",
+    suggestions: ["Use process.env.PASSWORD", "Use a secrets manager (Vault, AWS Secrets Manager)"],
+    match: { content: ["password = \\"", "password = '", "passwd = \\"", "passwd = '", "pwd = \\"", "pwd = '"] } },
+  { name: "secret-api-key", action: "deny",
+    feedback: "Hardcoded API keys detected. Use environment variables or a secrets manager.",
+    suggestions: ["Use process.env.API_KEY", "Use a secrets manager"],
+    match: { content: ["api_key = \\"", "api_key = '", "apiKey = \\"", "apiKey = '", "API_KEY = \\"", "API_KEY = '"] } },
+  { name: "secret-private-key", action: "deny",
+    feedback: "Private keys must not be embedded in source code.",
+    suggestions: ["Use a secrets manager or SSH agent"],
+    match: { content: ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----"] } },
+  // ── MCP safety ──
+  { name: "mcp-db-write", action: "deny",
+    feedback: "Direct database write via MCP is not allowed. Use the application API layer.",
+    suggestions: ["Use the application API instead of direct database access"],
+    match: { mcp_server: ["database", "db", "sql", "postgres", "mysql", "mongodb"], mcp_operation: ["write", "delete", "drop", "truncate", "alter", "update", "insert", "execute"] } },
+  // ── Frontend security (warn) ──
+  { name: "react-xss", action: "warn",
+    feedback: "dangerouslySetInnerHTML can lead to XSS. Ensure content is sanitized.",
+    suggestions: ["Use DOMPurify to sanitize HTML", "Use textContent instead when possible"],
+    match: { file_type: ["tsx", "jsx", "ts", "js"], content: ["dangerouslySetInnerHTML"] } },
+  { name: "vue-xss", action: "warn",
+    feedback: "v-html can lead to XSS. Use text interpolation when possible.",
+    suggestions: ["Use {{ }} interpolation instead of v-html"],
+    match: { file_type: ["vue"], content: ["v-html"] } },
+  { name: "eval-injection", action: "warn",
+    feedback: "eval() can lead to code injection. Consider safer alternatives.",
+    suggestions: ["Use JSON.parse() for JSON data", "Use Function constructors carefully", "Avoid eval when possible"],
+    match: { file_type: ["ts", "js", "tsx", "jsx", "py", "rb"], content: ["eval(", "new Function("] } },
+  // ── Core module protection ──
+  { name: "core-module", action: "warn",
+    feedback: "You are modifying core module files. These changes require human review.",
+    suggestions: ["Ensure changes are reviewed by a human", "Document the changes thoroughly"],
+    match: { file_path: ["**/src/core/**", "**/src/kernel/**", "**/src/runtime/**"] } },
+];
+
+/**
+ * Extract match dimensions from handler input
+ */
+function extractDims(input) {
+  const toolName = input.tool_name || "";
+  const toolInput = input.tool_input || {};
+  const filePath = toolInput.file_path || toolInput.path || toolInput.filePath || "";
+  const content = toolInput.content || "";
+  const command = toolInput.command || "";
+  const fileType = filePath.includes(".") ? filePath.split(".").pop() : "";
+
+  let mcpServer = "", mcpOp = "";
+  if (toolName.startsWith("mcp__")) {
+    const parts = toolName.split("__");
+    if (parts.length >= 3) { mcpServer = parts[1]; mcpOp = parts.slice(2).join("__"); }
+  } else if (toolName.startsWith("mcp_")) {
+    const parts = toolName.split("_");
+    if (parts.length >= 3) { mcpServer = parts[1]; mcpOp = parts.slice(2).join("_"); }
+  }
+
+  return { tool_name: toolName, file_path: filePath, content, command, mcp_server: mcpServer, mcp_operation: mcpOp, file_type: fileType };
+}
+
+/**
+ * Glob-to-regex (simplified)
+ */
+function globRe(glob) {
+  let r = "";
+  const special = [".", "+", "^", "$", "{", "}", "(", ")", "|", "[", "]"];
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i+1] === "*") { r += (glob[i+2] === "/" ? "(.*/)?" : ".*"); i += (glob[i+2] === "/" ? 2 : 1); }
+      else { r += "[^/]*"; }
+    } else if (c === "?") { r += "."; }
+    else if (special.indexOf(c) >= 0) { r += String.fromCharCode(92) + c; }
+    else { r += c; }
+  }
+  return new RegExp(r, "i");
+}
+
+/**
+ * Match one dimension
+ */
+function matchDim(patterns, value) {
+  if (!value) return false;
+  return patterns.some(p => {
+    if (p.includes("*") || p.includes("?")) return globRe(p).test(value);
+    return value.toLowerCase().includes(p.toLowerCase());
+  });
+}
+
+/**
+ * Evaluate all built-in rules against input dimensions
+ */
+function evaluateSemanticRules(input) {
+  const dims = extractDims(input);
+  const priority = { deny: 0, modify: 1, warn: 2 };
+  let best = null;
+  let bestP = Infinity;
+
+  for (const rule of BUILT_IN_RULES) {
+    const m = rule.match;
+    let matched = 0, total = 0;
+
+    if (m.tool_name)    { total++; if (matchDim(m.tool_name, dims.tool_name)) matched++; }
+    if (m.file_path)    { total++; if (matchDim(m.file_path, dims.file_path)) matched++; }
+    if (m.content)      { total++; if (matchDim(m.content, dims.content)) matched++; }
+    if (m.command)      { total++; if (matchDim(m.command, dims.command)) matched++; }
+    if (m.mcp_server)   { total++; if (matchDim(m.mcp_server, dims.mcp_server)) matched++; }
+    if (m.mcp_operation){ total++; if (matchDim(m.mcp_operation, dims.mcp_operation)) matched++; }
+    if (m.file_type)    { total++; if (matchDim(m.file_type, dims.file_type)) matched++; }
+
+    if (total > 0 && matched === total) {
+      const p = priority[rule.action] ?? 3;
+      if (p < bestP) {
+        best = rule;
+        bestP = p;
+      }
+    }
+  }
+
+  return best;
 }
 
 // ─── stdin Reader ───────────────────────────────────────────────────
@@ -632,6 +834,9 @@ async function main() {
   }
 
   log("Hook triggered:", mode);
+  log("PID:", process.pid.toString());
+  log("CWD:", process.cwd());
+  log("Args:", process.argv.join(" "));
 
   // Load policies
   const policies = loadPolicies();
@@ -655,6 +860,8 @@ async function main() {
   let finalDecision = "allow";
   let finalReason = "";
   let finalFeedback = "";
+  let finalSuggestions = [];
+  let finalModifiedInput = null;
 
   for (const event of events) {
     const result = evaluatePolicies(policies, event.name, event.payload);
@@ -663,13 +870,23 @@ async function main() {
       finalDecision = "deny";
       finalReason = result.reason || result.feedback;
       finalFeedback = result.feedback || result.reason;
+      if (result.suggestions) finalSuggestions = result.suggestions;
       log("DENY:", event.name, "-", finalReason);
       writeTrace(event.name, event.payload, "deny", finalFeedback);
       break; // Most restrictive wins, stop evaluating
+    } else if (result.action === "modify") {
+      finalDecision = "allow"; // modify means "allow with modified input"
+      finalReason = result.reason || result.feedback;
+      finalFeedback = result.feedback || result.reason;
+      finalModifiedInput = result.modifiedInput || null;
+      if (result.suggestions) finalSuggestions = result.suggestions;
+      log("MODIFY:", event.name, "-", finalReason);
+      writeTrace(event.name, event.payload, "modify", finalFeedback);
     } else if (result.action === "warn" && finalDecision !== "deny") {
       finalDecision = "warn";
       finalReason = result.reason || result.feedback;
       finalFeedback = result.feedback || result.reason;
+      if (result.suggestions) finalSuggestions = result.suggestions;
       log("WARN:", event.name, "-", finalReason);
     }
 
@@ -679,11 +896,54 @@ async function main() {
     }
   }
 
+  // ── Semantic rule evaluation (if YAML policies didn't deny) ──
+  if (finalDecision !== "deny" && phase === "before") {
+    const semRule = evaluateSemanticRules(input);
+    if (semRule) {
+      log(semRule.action.toUpperCase() + ":", semRule.name, "-", semRule.feedback);
+      writeTrace("semantic." + semRule.name, { toolName, rule: semRule.name }, semRule.action, semRule.feedback);
+
+      if (semRule.action === "deny") {
+        finalDecision = "deny";
+        finalReason = semRule.feedback;
+        finalFeedback = semRule.feedback;
+        if (semRule.suggestions) finalSuggestions = semRule.suggestions;
+      } else if (semRule.action === "modify" && !finalModifiedInput) {
+        finalDecision = "allow"; // modify means "allow with modified input"
+        finalReason = semRule.feedback;
+        finalFeedback = semRule.feedback;
+        finalModifiedInput = semRule.modifiedInput || null;
+        if (semRule.suggestions) finalSuggestions = semRule.suggestions;
+      } else if (semRule.action === "warn" && finalDecision !== "deny") {
+        finalDecision = "warn";
+        finalReason = semRule.feedback;
+        finalFeedback = semRule.feedback;
+        if (semRule.suggestions && finalSuggestions.length === 0) {
+          finalSuggestions = semRule.suggestions;
+        }
+      }
+    }
+  }
+
   // Output decision
   if (mode === "pre-tool-use" || mode === "stop") {
     const output = { decision: finalDecision };
     if (finalReason) output.reason = finalReason;
     if (finalFeedback) output.stopReason = finalFeedback;
+
+    // Add updatedInput for modify actions (Claude Code / Qoder / Cursor support this)
+    if (finalModifiedInput) {
+      output.updatedInput = finalModifiedInput;
+      // Merge modified input with original input
+      if (input.tool_input) {
+        output.updatedInput = { ...input.tool_input, ...finalModifiedInput };
+      }
+    }
+
+    // Add suggestions for the agent
+    if (finalSuggestions.length > 0) {
+      output.suggestions = finalSuggestions;
+    }
 
     process.stdout.write(JSON.stringify(output));
     process.exit(finalDecision === "deny" ? 2 : 0);
@@ -788,12 +1048,16 @@ Add to \`.codex/hooks.json\`:
 
 \`\`\`json
 {
-  "PreToolUse": [
-    { "command": "node .harness/hooks/handler.mjs pre-tool-use" }
-  ],
-  "PostToolUse": [
-    { "command": "node .harness/hooks/handler.mjs post-tool-use" }
-  ]
+  "description": "Agent runtime hooks",
+  "hooks": {
+    "matcher": "*",
+    "PreToolUse": [
+      { "command": "node .harness/hooks/handler.mjs pre-tool-use" }
+    ],
+    "PostToolUse": [
+      { "command": "node .harness/hooks/handler.mjs post-tool-use" }
+    ]
+  }
 }
 \`\`\`
 
@@ -1018,12 +1282,16 @@ const AGENTS: AgentConfig[] = [
     description: "OpenAI Codex CLI",
     configPath: ".codex/hooks.json",
     hookConfig: `{
-  "PreToolUse": [{
-    "command": "node .harness/hooks/handler.mjs pre-tool-use"
-  }],
-  "PostToolUse": [{
-    "command": "node .harness/hooks/handler.mjs post-tool-use"
-  }]
+  "description": "Agent runtime hooks",
+  "hooks": {
+    "matcher": "*",
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
 }`,
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".codex");
@@ -1034,12 +1302,16 @@ const AGENTS: AgentConfig[] = [
       }
       
       const config = {
-        PreToolUse: [{
-          command: "node .harness/hooks/handler.mjs pre-tool-use"
-        }],
-        PostToolUse: [{
-          command: "node .harness/hooks/handler.mjs post-tool-use"
-        }]
+        description: "Agent runtime hooks",
+        hooks: {
+          matcher: "*",
+          PreToolUse: [{
+            command: "node .harness/hooks/handler.mjs pre-tool-use"
+          }],
+          PostToolUse: [{
+            command: "node .harness/hooks/handler.mjs post-tool-use"
+          }]
+        }
       };
       
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));

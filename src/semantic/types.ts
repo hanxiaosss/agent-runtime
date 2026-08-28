@@ -74,7 +74,7 @@ export interface SemanticDecision {
   suggestions?: string[];
   
   /** Modified input (if action is 'modify') */
-  modifiedInput?: any;
+  modifiedInput?: Record<string, unknown>;
 }
 
 /**

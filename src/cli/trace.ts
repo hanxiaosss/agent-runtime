@@ -107,6 +107,31 @@ function readAllTraces(traceDir: string): TraceEntry[] {
 
 // ─── Timeline Renderer ──────────────────────────────────────────────
 
+/**
+ * Convert ISO timestamp to local time string.
+ * Input:  "2026-08-28T02:35:06.712Z" (UTC)
+ * Output: "10:35:06.712" (local time, e.g. UTC+8)
+ */
+function toLocalTime(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+/**
+ * Convert ISO timestamp to short local time (no ms).
+ */
+function toLocalTimeShort(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
 function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
   const projectName = extractProjectName(harnessDir);
 
@@ -118,7 +143,7 @@ function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
   console.log("  " + "─".repeat(65));
 
   for (const entry of entries) {
-    const time = entry.timestamp.slice(11, 23);
+    const time = toLocalTime(entry.timestamp);
     const action = entry.action.toUpperCase().padEnd(6);
     const event = entry.event.padEnd(24);
     const source = (entry.source || "unknown").padEnd(13);
@@ -156,7 +181,7 @@ function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
     const duration = formatDuration(
       new Date(last).getTime() - new Date(first).getTime(),
     );
-    console.log(`  Range: ${first.slice(11, 19)} → ${last.slice(11, 19)} (${duration})`);
+    console.log(`  Range: ${toLocalTimeShort(first)} → ${toLocalTimeShort(last)} (${duration})`);
   }
 
   console.log("");
@@ -242,7 +267,7 @@ function followTraces(traceDir: string, startIndex: number): void {
 }
 
 function renderEntry(entry: TraceEntry): void {
-  const time = entry.timestamp.slice(11, 23);
+  const time = toLocalTime(entry.timestamp);
   const action = entry.action.toUpperCase().padEnd(6);
   const event = entry.event.padEnd(24);
   const source = (entry.source || "unknown").padEnd(13);

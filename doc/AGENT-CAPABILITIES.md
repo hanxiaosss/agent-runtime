@@ -12,7 +12,7 @@
 | **Qoder** | ✅ 完整支持 | `.qoder/settings.json` | ✅ 可用 |
 | **Codex CLI** | ✅ 完整支持 | `.codex/hooks.json` | ✅ 可用 |
 | **GitHub Copilot** | ✅ 完整支持 | `.github/hooks/hooks.json` | ✅ 可用 |
-| **Cursor** | ✅ 完整支持 | `.cursor/hooks.json` | ✅ 可用 |
+| **Cursor** | ⚠️ 待验证 | `.cursor/hooks.json` | ⚠️ 待验证 |
 | **Trae** | ⚠️ 部分支持 | 待验证 | ⚠️ 实验性 |
 
 ---
@@ -88,12 +88,16 @@
 ```json
 // .codex/hooks.json
 {
-  "PreToolUse": [{
-    "command": "node .harness/hooks/handler.mjs pre-tool-use"
-  }],
-  "PostToolUse": [{
-    "command": "node .harness/hooks/handler.mjs post-tool-use"
-  }]
+  "description": "Agent runtime hooks",
+  "hooks": {
+    "matcher": "*",
+    "PreToolUse": [{
+      "command": "node .harness/hooks/handler.mjs pre-tool-use"
+    }],
+    "PostToolUse": [{
+      "command": "node .harness/hooks/handler.mjs post-tool-use"
+    }]
+  }
 }
 ```
 
@@ -142,39 +146,31 @@
 
 **状态**：✅ 完全可用
 
+**重要说明**：
+- ⚠️ **VSCode Copilot Agent Mode** 目前**可能不支持** hooks
+- ✅ **GitHub.com Copilot Agent** 支持 hooks
+- 如果你在 VSCode 中使用 Copilot Agent Mode 且 hook 没有触发，请参考 [Copilot Hook 诊断指南](../COPILOT-HOOK-DIAGNOSIS.md)
+
 **参考文档**：https://docs.github.com/copilot/customizing-copilot/agents/custom-agents/hooks
 
 ---
 
-### ✅ Cursor（完全支持）
+### ⚠️ Cursor（待验证）
 
-**Hook 类型**：
-- PreToolUse - 工具执行前
-- PostToolUse - 工具执行后
+**状态**：⚠️ 待验证，可能不支持 hooks
 
-**配置方式**：
-```json
-// .cursor/hooks.json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "command": "node .harness/hooks/handler.mjs pre-tool-use"
-    }],
-    "PostToolUse": [{
-      "command": "node .harness/hooks/handler.mjs post-tool-use"
-    }]
-  }
-}
-```
+**问题**：
+- 配置了 `.cursor/hooks.json`，但 Cursor Agent 没有调用 hook
+- 与 VSCode Copilot Agent Mode 情况类似
 
-**特点**：
-- 支持 JSON stdout + exit code 协议（类似 Claude Code）
-- 支持 `updatedInput` 字段进行输入重写
-- 工具名称：`write_file`, `edit_file`, `create_file`
-- MCP 工具使用 `mcp__` 前缀（双下划线）
-- Exit code: 0 = allow, 2 = deny
+**待确认**：
+- Cursor 是否支持 PreToolUse/PostToolUse hooks
+- 配置方式是否正确
+- 实际触发机制
 
-**状态**：✅ 完全可用
+**替代方案**：使用文件监控器 `node dist/cli/watcher.js`
+
+**参考文档**：需要查阅 Cursor 官方文档确认 hook 支持情况
 
 ---
 
@@ -233,9 +229,9 @@ node dist/cli/watcher.js &
 - ✅ Qoder
 - ✅ Codex CLI
 - ✅ GitHub Copilot
-- ✅ Cursor
 
-**实验性支持**：
+**待验证的 Agent**：
+- ⚠️ Cursor（配置了 hooks 但 agent 没有调用）
 - ⚠️ Trae（待验证）
 
 **建议**：所有主流 Agent 都支持 hooks，可以根据需求选择合适的 Agent。
