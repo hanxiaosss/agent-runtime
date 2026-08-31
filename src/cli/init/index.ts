@@ -290,6 +290,44 @@ export async function runInit(args: string[]): Promise<void> {
   }
 
   console.log("");
+
+  // VSCode detection and setup
+  const vscodeDir = path.join(targetDir, ".vscode");
+  const hasVSCode = fs.existsSync(vscodeDir);
+  const withVSCode = optionArgs.includes("--with-vscode");
+  const noVSCode = optionArgs.includes("--no-vscode");
+
+  if (!noVSCode && (hasVSCode || withVSCode)) {
+    // Write VSCode settings
+    if (!fs.existsSync(vscodeDir)) {
+      fs.mkdirSync(vscodeDir, { recursive: true });
+    }
+
+    const settingsPath = path.join(vscodeDir, "settings.json");
+    let settings: Record<string, unknown> = {};
+
+    if (fs.existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      } catch {
+        // ignore
+      }
+    }
+
+    settings["agentRuntime.traceDir"] = ".harness/traces";
+    settings["agentRuntime.autoRefresh"] = true;
+    settings["agentRuntime.maxEntries"] = 1000;
+
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+    console.log("  \u2713 VSCode settings configured");
+
+    if (hasVSCode) {
+      console.log("");
+      console.log("  \ud83d\udcfa VSCode detected. Install the Agent Runtime extension:");
+      console.log("     code --install-extension editors/vscode/agent-runtime-trace-0.2.0.vsix");
+      console.log("     Then open Secondary Sidebar (Ctrl+Shift+P \u2192 'View: Show Secondary Sidebar')");
+    }
+  }
   console.log("Done! Next steps:");
 
   console.log(`  1. Agent configuration generated: ${selectedAgent.configPath}`);

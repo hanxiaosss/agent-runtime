@@ -1,15 +1,5 @@
 ﻿import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-
-interface TraceEntry {
-    timestamp: string;
-    event: string;
-    source: string;
-    action: string;
-    payload: Record<string, unknown>;
-    feedback: string[];
-}
+import { IncrementalTraceReader, TraceEntry } from './incrementalTraceReader';
 
 interface TraceNode {
     type: 'session' | 'tool' | 'event';
@@ -29,16 +19,17 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceNode> {
     private showDeniedOnly = false;
 
     constructor(
-        private tracePath: string,
-        private maxEntries: number
+        private traceReader: IncrementalTraceReader
     ) {}
 
     refresh(): void {
+        this.traceReader.readNewEvents();
         this.loadTraces();
         this._onDidChangeTreeData.fire();
     }
 
     clear(): void {
+        this.traceReader.clear();
         this.nodes = [];
         this._onDidChangeTreeData.fire();
     }
@@ -80,47 +71,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceNode> {
     }
 
     private loadTraces() {
-        if (!fs.existsSync(this.tracePath)) {
-            this.nodes = [];
-            return;
+        let entries = this.traceReader.getEvents();
+
+        if (this.showDeniedOnly) {
+            entries = entries.filter(e => e.action === 'deny');
         }
 
-        try {
-            const files = fs.readdirSync(this.tracePath)
-                .filter(f => f.endsWith('.jsonl'))
-                .sort();
-
-            const allEntries: TraceEntry[] = [];
-
-            for (const file of files) {
-                const filePath = path.join(this.tracePath, file);
-                const content = fs.readFileSync(filePath, 'utf-8');
-                
-                for (const line of content.trim().split('\n')) {
-                    if (!line.trim()) continue;
-                    try {
-                        const entry = JSON.parse(line) as TraceEntry;
-                        allEntries.push(entry);
-                    } catch {
-                        // Skip malformed lines
-                    }
-                }
-            }
-
-            let filteredEntries = allEntries;
-            if (this.showDeniedOnly) {
-                filteredEntries = allEntries.filter(e => e.action === 'deny');
-            }
-
-            if (filteredEntries.length > this.maxEntries) {
-                filteredEntries = filteredEntries.slice(-this.maxEntries);
-            }
-
-            this.nodes = this.buildTree(filteredEntries);
-        } catch (error) {
-            console.error('Failed to load traces:', error);
-            this.nodes = [];
-        }
+        this.nodes = this.buildTree(entries);
     }
 
     private buildTree(entries: TraceEntry[]): TraceNode[] {

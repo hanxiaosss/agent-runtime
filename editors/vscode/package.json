@@ -1,8 +1,8 @@
-{
+﻿{
   "name": "agent-runtime-trace",
-  "displayName": "Agent Runtime Trace",
-  "description": "Observable tool call chain for AI agents in VSCode Secondary Sidebar",
-  "version": "0.1.0",
+  "displayName": "Agent Runtime Governance",
+  "description": "Agent governance panel: real-time trace, policy management, and status monitoring",
+  "version": "0.2.0",
   "publisher": "agent-runtime",
   "engines": {
     "vscode": "^1.79.0"
@@ -12,7 +12,7 @@
     "Visualization"
   ],
   "activationEvents": [
-    "onView:agentRuntime.traceView"
+    "workspaceContains:.harness"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -21,7 +21,7 @@
         {
           "id": "agentRuntime",
           "title": "Agent Runtime",
-          "icon": "$(eye)"
+          "icon": "$(shield)"
         }
       ]
     },
@@ -32,13 +32,19 @@
           "name": "Tool Call Chain",
           "icon": "$(list-tree)",
           "contextualTitle": "Agent Runtime Trace"
+        },
+        {
+          "id": "agentRuntime.policyView",
+          "name": "Policies & Rules",
+          "icon": "$(shield)",
+          "contextualTitle": "Agent Runtime Policies"
         }
       ]
     },
     "commands": [
       {
         "command": "agentRuntime.refresh",
-        "title": "Refresh Trace",
+        "title": "Refresh",
         "category": "Agent Runtime",
         "icon": "$(refresh)"
       },
@@ -53,13 +59,38 @@
         "title": "Show Denied Only",
         "category": "Agent Runtime",
         "icon": "$(filter)"
+      },
+      {
+        "command": "agentRuntime.showTraceView",
+        "title": "Show Trace View",
+        "category": "Agent Runtime"
+      },
+      {
+        "command": "agentRuntime.showPolicyView",
+        "title": "Show Policy View",
+        "category": "Agent Runtime"
+      },
+      {
+        "command": "agentRuntime.timeWindow5m",
+        "title": "Show Last 5 Minutes",
+        "category": "Agent Runtime"
+      },
+      {
+        "command": "agentRuntime.timeWindow1h",
+        "title": "Show Last 1 Hour",
+        "category": "Agent Runtime"
+      },
+      {
+        "command": "agentRuntime.timeWindowToday",
+        "title": "Show All Today",
+        "category": "Agent Runtime"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "agentRuntime.refresh",
-          "when": "view == agentRuntime.traceView",
+          "when": "view == agentRuntime.traceView || view == agentRuntime.policyView",
           "group": "navigation"
         },
         {
@@ -70,6 +101,13 @@
         {
           "command": "agentRuntime.clear",
           "when": "view == agentRuntime.traceView"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentRuntime.toggleRuleEnabled",
+          "when": "view == agentRuntime.policyView && viewItem == rule",
+          "group": "inline"
         }
       ]
     },
@@ -88,8 +126,8 @@
         },
         "agentRuntime.maxEntries": {
           "type": "number",
-          "default": 100,
-          "description": "Maximum number of trace entries to display"
+          "default": 1000,
+          "description": "Maximum number of trace entries to keep in memory"
         }
       }
     }
