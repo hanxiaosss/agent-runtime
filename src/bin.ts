@@ -19,7 +19,7 @@
  *   hannah summary --today
  */
 
-import { runInit } from "./cli/init.js";
+import { runInit } from "./cli/init/index.js";
 import { runSync } from "./cli/sync.js";
 import { runTrace } from "./cli/trace.js";
 import { runSummary } from "./cli/summary.js";

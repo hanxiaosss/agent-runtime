@@ -2,7 +2,7 @@
  * CLI index — re-exports all CLI commands
  */
 
-export { runInit } from "./init.js";
+export { runInit } from "./init/index.js";
 export { runTrace } from "./trace.js";
 export { runSummary } from "./summary.js";
 export {
