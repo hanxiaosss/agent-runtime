@@ -5,3 +5,5 @@ export {
   qualityGatePolicy,
   allPolicies,
 } from "./security.js";
+
+export { redlinePolicy } from "./redline.js";

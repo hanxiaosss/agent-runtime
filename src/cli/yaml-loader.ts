@@ -23,9 +23,10 @@ interface YAMLRule {
   name?: string;
   when: string | string[];
   match?: YAMLMatch[];
-  action: "allow" | "deny" | "warn" | "retry" | "trace";
+  action: "allow" | "deny" | "warn" | "retry" | "trace" | "modify";
   reason?: string;
   feedback?: string;
+  modifiedInput?: Record<string, unknown>;
 }
 
 interface YAMLMatch {
@@ -110,7 +111,7 @@ function parseRule(raw: YAMLRule, policyName: string, index: number): PolicyRule
     throw new Error(`Invalid rule #${index} in policy '${policyName}': missing 'action' field`);
   }
 
-  const validActions = ["allow", "deny", "warn", "retry", "trace"];
+  const validActions = ["allow", "deny", "warn", "retry", "trace", "modify"];
   if (!validActions.includes(raw.action)) {
     throw new Error(
       `Invalid rule '${raw.name ?? `#${index}`}' in policy '${policyName}': ` +
@@ -145,6 +146,7 @@ function parseRule(raw: YAMLRule, policyName: string, index: number): PolicyRule
     action: raw.action,
     reason: raw.reason,
     feedback: raw.feedback,
+    modifiedInput: raw.modifiedInput,
   };
 }
 

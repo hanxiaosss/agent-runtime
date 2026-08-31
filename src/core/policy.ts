@@ -11,7 +11,7 @@ import { HookResult, type HookHandler, type HookResult as HookResultType } from 
 
 // ─── Policy Rule Definition ─────────────────────────────────────────
 
-export type PolicyAction = "allow" | "deny" | "warn" | "retry" | "trace";
+export type PolicyAction = "allow" | "deny" | "warn" | "retry" | "trace" | "modify";
 
 export interface PolicyMatch {
   /** Field path to match against event payload (dot notation) */
@@ -35,6 +35,12 @@ export interface PolicyRule {
   feedback?: string;
   /** Rule name for debugging */
   name?: string;
+  /**
+   * When action is "modify", this payload replaces / merges into the
+   * tool input. The adapter is responsible for translating it back
+   * into the runtime-specific format (e.g. Claude Code `updatedInput`).
+   */
+  modifiedInput?: Record<string, unknown>;
 }
 
 export interface PolicyDefinition {
@@ -201,6 +207,12 @@ export class PolicyEngine {
               tracePolicy: policy.name,
               traceRule: rule.name,
             });
+          case "modify":
+            return HookResult.modify(
+              rule.reason ?? `Input modified by policy rule: ${rule.name ?? "unnamed"}`,
+              rule.feedback ?? `Input modified by policy: ${policy.name}`,
+              rule.modifiedInput ?? {},
+            );
           case "allow":
           default:
             return HookResult.allow({

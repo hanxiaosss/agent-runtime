@@ -34,6 +34,10 @@ export {
   type ConfirmAfterEvent,
   type APIBeforeEvent,
   type APIAfterEvent,
+  type PromptBeforeEvent,
+  type PromptAfterEvent,
+  type NotificationEvent,
+  type SubagentStopEvent,
   createEventId,
   createCorrelationId,
   getCategory,
@@ -102,6 +106,7 @@ export {
   mcpSafetyPolicy,
   gitSafetyPolicy,
   qualityGatePolicy,
+  redlinePolicy,
   allPolicies,
 } from "./policies/index.js";
 

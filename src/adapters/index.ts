@@ -7,6 +7,9 @@ export { ClaudeCodeAdapter, runCLI as runClaudeCodeCLI } from "./claude-code.js"
 export type {
   ClaudePreToolUseInput,
   ClaudePostToolUseInput,
+  ClaudeUserPromptSubmitInput,
+  ClaudeNotificationInput,
+  ClaudeSubagentStopInput,
   ClaudeHookOutput,
 } from "./claude-code.js";
 

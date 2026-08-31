@@ -172,7 +172,10 @@ export const qualityGatePolicy: PolicyDefinition = {
 
 // ─── All Policies ───────────────────────────────────────────────────
 
+import { redlinePolicy } from "./redline.js";
+
 export const allPolicies: PolicyDefinition[] = [
+  redlinePolicy,         // Redline rules run FIRST — they are non-negotiable.
   protectedFilesPolicy,
   mcpSafetyPolicy,
   gitSafetyPolicy,

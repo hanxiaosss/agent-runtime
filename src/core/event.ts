@@ -17,7 +17,9 @@ export type EventCategory =
   | "git"
   | "agent"
   | "confirm"
-  | "api";
+  | "api"
+  | "prompt"
+  | "notification";
 
 // ─── Event Names ────────────────────────────────────────────────────
 
@@ -49,7 +51,14 @@ export type EventName =
   | "confirm.after"
   // API calls (external HTTP)
   | "api.before"
-  | "api.after";
+  | "api.after"
+  // User prompt submission (UserPromptSubmit hook)
+  | "prompt.before"
+  | "prompt.after"
+  // Notification (Notification hook — observation only)
+  | "notification"
+  // Sub-agent lifecycle (SubagentStop hook)
+  | "subagent.stop";
 
 // ─── Support Level ──────────────────────────────────────────────────
 // Different runtimes have different native capabilities.
@@ -236,6 +245,64 @@ export interface APIAfterEvent extends BaseEvent {
   };
 }
 
+// ─── User Prompt Events ─────────────────────────────────────────────
+
+export interface PromptBeforeEvent extends BaseEvent {
+  name: "prompt.before";
+  category: "prompt";
+  payload: {
+    /** The user's prompt message being submitted */
+    userMessage: string;
+    /** Session id (if available) */
+    sessionId?: string;
+    /** Raw runtime-specific input fields */
+    rawInput?: Record<string, unknown>;
+  };
+}
+
+export interface PromptAfterEvent extends BaseEvent {
+  name: "prompt.after";
+  category: "prompt";
+  payload: {
+    /** The user's prompt message that was submitted */
+    userMessage: string;
+    /** Session id (if available) */
+    sessionId?: string;
+    /** Whether the prompt was accepted */
+    accepted: boolean;
+  };
+}
+
+// ─── Notification Event ─────────────────────────────────────────────
+
+export interface NotificationEvent extends BaseEvent {
+  name: "notification";
+  category: "notification";
+  payload: {
+    /** Notification title (if provided) */
+    title?: string;
+    /** Notification body */
+    message: string;
+    /** Notification priority / level */
+    level?: "info" | "warning" | "error";
+  };
+}
+
+// ─── Sub-Agent Stop Event ───────────────────────────────────────────
+
+export interface SubagentStopEvent extends BaseEvent {
+  name: "subagent.stop";
+  category: "agent";
+  payload: {
+    /** Sub-agent identifier (if available) */
+    subagentId?: string;
+    /** Summary of what the sub-agent did */
+    summary?: string;
+    /** Whether the sub-agent completed successfully */
+    success?: boolean;
+  };
+}
+
 // ─── Union Type ─────────────────────────────────────────────────────
 
 export type UnifiedEvent =
@@ -252,6 +319,10 @@ export type UnifiedEvent =
   | ConfirmAfterEvent
   | APIBeforeEvent
   | APIAfterEvent
+  | PromptBeforeEvent
+  | PromptAfterEvent
+  | NotificationEvent
+  | SubagentStopEvent
   | BaseEvent; // fallback for events not yet typed
 
 // ─── Event Metadata Helpers ─────────────────────────────────────────

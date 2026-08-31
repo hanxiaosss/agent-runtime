@@ -492,6 +492,10 @@ export abstract class BaseAdapter implements Adapter {
    */
   abstract handlePostToolUse(input: BaseHookInput): Promise<void>;
 
+  // ─── Optional Hooks (default no-op) ──────────────────────────────
+  // Subclasses override these to support runtime-specific hooks.
+  // Default implementations either return allow or are observation-only.
+
   /**
    * Handle a Stop / confirm.before hook.
    * Default: emit confirm.before event.
@@ -508,6 +512,82 @@ export abstract class BaseAdapter implements Adapter {
       correlationId: this.correlationId,
       payload: {
         summary: (input as any).summary ?? (input as any).message,
+      },
+    });
+
+    return pipelineToOutput(result);
+  }
+
+  /**
+   * Handle a UserPromptSubmit / prompt.before hook.
+   * Default: emit prompt.before event (blockable).
+   */
+  async handleUserPromptSubmit(input: BaseHookInput): Promise<BaseHookOutput> {
+    if (!this.runtime) return { decision: "allow" };
+
+    const userMessage =
+      (input as any).user_message ??
+      (input as any).prompt ??
+      (input as any).message ??
+      "";
+
+    const result = await this.runtime.processEvent({
+      id: createEventId(),
+      name: "prompt.before" as EventName,
+      category: "prompt",
+      timestamp: new Date().toISOString(),
+      source: this.name,
+      correlationId: this.correlationId,
+      payload: {
+        userMessage,
+        sessionId: input.session_id,
+        rawInput: input,
+      },
+    });
+
+    return pipelineToOutput(result);
+  }
+
+  /**
+   * Handle a Notification hook.
+   * Default: emit notification event (observation only).
+   */
+  async handleNotification(input: BaseHookInput): Promise<void> {
+    if (!this.runtime) return;
+
+    await this.runtime.processEvent({
+      id: createEventId(),
+      name: "notification" as EventName,
+      category: "notification",
+      timestamp: new Date().toISOString(),
+      source: this.name,
+      correlationId: this.correlationId,
+      payload: {
+        title: (input as any).title,
+        message: (input as any).message ?? (input as any).content ?? "",
+        level: (input as any).level ?? "info",
+      },
+    });
+  }
+
+  /**
+   * Handle a SubagentStop / subagent.stop hook.
+   * Default: emit subagent.stop event (blockable).
+   */
+  async handleSubagentStop(input: BaseHookInput): Promise<BaseHookOutput> {
+    if (!this.runtime) return { decision: "allow" };
+
+    const result = await this.runtime.processEvent({
+      id: createEventId(),
+      name: "subagent.stop" as EventName,
+      category: "agent",
+      timestamp: new Date().toISOString(),
+      source: this.name,
+      correlationId: this.correlationId,
+      payload: {
+        subagentId: (input as any).subagent_id ?? (input as any).agent_id,
+        summary: (input as any).summary ?? (input as any).message,
+        success: (input as any).success,
       },
     });
 
