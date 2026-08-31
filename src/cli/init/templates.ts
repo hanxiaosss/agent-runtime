@@ -1255,21 +1255,20 @@ Similar to Claude Code, add hooks to \`.qoder/settings.json\`.
 
 #### Codex CLI
 
-Add to \`.codex/hooks.json\`:
+Add to \`.codex/config.toml\`:
 
-\`\`\`json
-{
-  "description": "Agent runtime hooks",
-  "hooks": {
-    "matcher": "*",
-    "PreToolUse": [
-      { "command": "node .harness/hooks/handler.mjs pre-tool-use" }
-    ],
-    "PostToolUse": [
-      { "command": "node .harness/hooks/handler.mjs post-tool-use" }
-    ]
-  }
-}
+\`\`\`toml
+[[hooks.PreToolUse]]
+matcher = "*"
+command = "node dist/hooks/codex-handler.js pre-tool-use"
+
+[[hooks.PostToolUse]]
+matcher = "*"
+command = "node dist/hooks/codex-handler.js post-tool-use"
+
+[[hooks.Stop]]
+matcher = ""
+command = "node dist/hooks/codex-handler.js stop"
 \`\`\`
 
 #### Trae
