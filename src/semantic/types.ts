@@ -268,4 +268,17 @@ export interface SemanticRule {
    * input before execution.
    */
   modifiedInput?: Record<string, unknown>;
+
+  /**
+   * Optional reflection prompt for agent self-analysis.
+   * When provided, the hook returns a引导性问题 that prompts the agent
+   * to reflect on potential risks, rather than calling an external LLM.
+   * 
+   * This is a zero-cost, zero-latency approach using agent self-analysis.
+   * 
+   * Example:
+   *   reflection_prompt: "Check if this code might expose sensitive data like API keys or tokens in logs"
+   */
+  reflection_prompt?: string;
+
 }

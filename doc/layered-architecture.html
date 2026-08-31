@@ -1,0 +1,496 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Runtime - Layered Hook Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.95;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .architecture {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .layer {
+            display: flex;
+            align-items: stretch;
+            gap: 20px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .layer:hover {
+            transform: translateX(10px);
+        }
+        
+        .layer-info {
+            flex: 0 0 280px;
+            padding: 25px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .layer-number {
+            font-size: 3em;
+            font-weight: 900;
+            opacity: 0.3;
+            line-height: 1;
+        }
+        
+        .layer-name {
+            font-size: 1.8em;
+            font-weight: 700;
+            margin: 10px 0;
+        }
+        
+        .layer-type {
+            font-size: 0.9em;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .layer-details {
+            flex: 1;
+            background: white;
+            padding: 25px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        
+        .detail-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid;
+        }
+        
+        .detail-box h4 {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            opacity: 0.7;
+        }
+        
+        .detail-box p {
+            font-size: 1em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .layer-1 .layer-info { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .layer-1 .detail-box { border-color: #f5576c; }
+        
+        .layer-2 .layer-info { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .layer-2 .detail-box { border-color: #4facfe; }
+        
+        .layer-3 .layer-info { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .layer-3 .detail-box { border-color: #43e97b; }
+        
+        .layer-4 .layer-info { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        .layer-4 .detail-box { border-color: #fa709a; }
+        
+        .flow-diagram {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+        }
+        
+        .flow-diagram h2 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .flow-steps {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+        
+        .flow-step {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        .flow-step h3 {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+        
+        .flow-step p {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .flow-arrow {
+            font-size: 2em;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .comparison {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+        }
+        
+        .comparison h2 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .comparison-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-size: 1em;
+        }
+        
+        .comparison-table td {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .comparison-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-fast { background: #d4edda; color: #155724; }
+        .badge-medium { background: #fff3cd; color: #856404; }
+        .badge-slow { background: #f8d7da; color: #721c24; }
+        
+        .footer {
+            background: #f8f9fa;
+            padding: 30px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ Agent Runtime - Layered Hook Architecture</h1>
+            <p>四层防御体系：从高速模式匹配到深度语义分析</p>
+        </div>
+        
+        <div class="content">
+            <div class="architecture">
+                <!-- Layer 1: Command Hook -->
+                <div class="layer layer-1">
+                    <div class="layer-info">
+                        <div class="layer-number">01</div>
+                        <div class="layer-name">Command Hook</div>
+                        <div class="layer-type">同步 · 模式匹配</div>
+                    </div>
+                    <div class="layer-details">
+                        <div class="detail-box">
+                            <h4>⚡ 速度</h4>
+                            <p>&lt; 10ms</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>💰 成本</h4>
+                            <p>零成本</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🎯 能力</h4>
+                            <p>已知危险模式拦截</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📍 位置</h4>
+                            <p>handler.mjs</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🔧 实现</h4>
+                            <p>字符串匹配 + 正则</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📊 覆盖率</h4>
+                            <p>99% 明显威胁</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Layer 2: Prompt Hook -->
+                <div class="layer layer-2">
+                    <div class="layer-info">
+                        <div class="layer-number">02</div>
+                        <div class="layer-name">Prompt Hook</div>
+                        <div class="layer-type">异步 · LLM 语义</div>
+                    </div>
+                    <div class="layer-details">
+                        <div class="detail-box">
+                            <h4>⚡ 速度</h4>
+                            <p>1-3 秒</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>💰 成本</h4>
+                            <p>~$0.04/月</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🎯 能力</h4>
+                            <p>未知风险模式发现</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📍 位置</h4>
+                            <p>prompt-hook-service</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🔧 实现</h4>
+                            <p>LLM API 调用</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📊 覆盖率</h4>
+                            <p>隐蔽风险 + 变形攻击</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Layer 3: Semantic Hook -->
+                <div class="layer layer-3">
+                    <div class="layer-info">
+                        <div class="layer-number">03</div>
+                        <div class="layer-name">Semantic Hook</div>
+                        <div class="layer-type">同步 · 多维匹配</div>
+                    </div>
+                    <div class="layer-details">
+                        <div class="detail-box">
+                            <h4>⚡ 速度</h4>
+                            <p>&lt; 50ms</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>💰 成本</h4>
+                            <p>零成本</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🎯 能力</h4>
+                            <p>意图级别规则匹配</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📍 位置</h4>
+                            <p>semantic-rules/*.yaml</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🔧 实现</h4>
+                            <p>7 维度 AND/OR 匹配</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📊 覆盖率</h4>
+                            <p>项目特定规则</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Layer 4: Git Hook -->
+                <div class="layer layer-4">
+                    <div class="layer-info">
+                        <div class="layer-number">04</div>
+                        <div class="layer-name">Git Hook</div>
+                        <div class="layer-type">同步 · 提交拦截</div>
+                    </div>
+                    <div class="layer-details">
+                        <div class="detail-box">
+                            <h4>⚡ 速度</h4>
+                            <p>&lt; 100ms</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>💰 成本</h4>
+                            <p>零成本</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🎯 能力</h4>
+                            <p>提交前最终检查</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📍 位置</h4>
+                            <p>.git/hooks/</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>🔧 实现</h4>
+                            <p>pre-commit + commit-msg</p>
+                        </div>
+                        <div class="detail-box">
+                            <h4>📊 覆盖率</h4>
+                            <p>代码质量 + 提交规范</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flow-diagram">
+                <h2>🔄 数据流：Agent 操作的完整生命周期</h2>
+                <div class="flow-steps">
+                    <div class="flow-step">
+                        <h3>1️⃣ Agent 发起操作</h3>
+                        <p>工具调用 (Bash, Write, MCP...)</p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <h3>2️⃣ Command Hook</h3>
+                        <p>快速模式匹配<br><strong>拦截已知威胁</strong></p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <h3>3️⃣ Semantic Hook</h3>
+                        <p>多维规则匹配<br><strong>检查项目规则</strong></p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <h3>4️⃣ Prompt Hook</h3>
+                        <p>异步 LLM 分析<br><strong>发现隐蔽风险</strong></p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <h3>5️⃣ 执行/拦截</h3>
+                        <p>允许/警告/拒绝</p>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <h3>6️⃣ Git Hook</h3>
+                        <p>提交前检查<br><strong>最终防线</strong></p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="comparison">
+                <h2>📊 四层对比：速度 vs 能力 vs 成本</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>层级</th>
+                            <th>检测方式</th>
+                            <th>速度</th>
+                            <th>成本</th>
+                            <th>适用场景</th>
+                            <th>典型用例</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Command Hook</strong></td>
+                            <td>字符串模式匹配</td>
+                            <td><span class="badge badge-fast">&lt; 10ms</span></td>
+                            <td>零</td>
+                            <td>高频、确定性检查</td>
+                            <td>rm -rf, DROP TABLE, .env 修改</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Prompt Hook</strong></td>
+                            <td>LLM 语义理解</td>
+                            <td><span class="badge badge-slow">1-3s</span></td>
+                            <td>~$0.04/月</td>
+                            <td>低频、需要判断力的检查</td>
+                            <td>shutil.rmtree('/'), 隐蔽密钥泄露, API breaking change</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Semantic Hook</strong></td>
+                            <td>7 维度匹配</td>
+                            <td><span class="badge badge-fast">&lt; 50ms</span></td>
+                            <td>零</td>
+                            <td>项目特定规则</td>
+                            <td>禁止修改 src/core/**, 只允许特定 MCP 操作</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Git Hook</strong></td>
+                            <td>提交前检查</td>
+                            <td><span class="badge badge-medium">&lt; 100ms</span></td>
+                            <td>零</td>
+                            <td>代码质量 + 提交规范</td>
+                            <td>代码格式检查, commit message 规范, 敏感信息扫描</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p><strong>Agent Runtime v0.2.0</strong> | 四层防御体系：Command Hook (高速拦截) → Prompt Hook (深度分析) → Semantic Hook (项目规则) → Git Hook (最终防线)</p>
+            <p style="margin-top: 10px;">💡 <strong>最佳实践</strong>：Command Hook 过滤 99% 明显问题，Prompt Hook 兜住漏网之鱼，Semantic Hook 执行项目规范，Git Hook 确保提交质量</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1015,6 +1015,84 @@ async function main() {
     }
   }
 
+
+  
+  // Helper: Match semantic rule against input
+  function matchSemanticRule(rule, input) {
+    const dims = rule.match;
+    const toolName = input.tool_name || "";
+    const toolInput = input.tool_input || {};
+    
+    // Check tool_name
+    if (dims.tool_name && dims.tool_name.length > 0) {
+      if (!dims.tool_name.some(pattern => matchPattern(toolName, pattern))) {
+        return false;
+      }
+    }
+    
+    // Check file_path
+    if (dims.file_path && dims.file_path.length > 0) {
+      const filePath = toolInput.file_path || "";
+      if (!dims.file_path.some(pattern => globMatch(pattern, filePath))) {
+        return false;
+      }
+    }
+    
+    // Check content
+    if (dims.content && dims.content.length > 0) {
+      const content = toolInput.content || toolInput.command || "";
+      if (!dims.content.some(pattern => content.includes(pattern))) {
+        return false;
+      }
+    }
+    
+    // Check file_type
+    if (dims.file_type && dims.file_type.length > 0) {
+      const filePath = toolInput.file_path || "";
+      const ext = path.extname(filePath).slice(1);
+      if (!dims.file_type.includes(ext)) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+
+  // ─── Reflection Prompt (Agent Self-Analysis) ──────────────────────────
+  // If semantic rules have reflection_prompt, return引导性问题让 agent 自我反思
+  // This is zero-cost, zero-latency, no API key needed
+  
+  if (finalDecision !== "deny" && phase === "before") {
+    const reflectionRules = semanticRules.filter(r => r.reflection_prompt);
+    
+    for (const rule of reflectionRules) {
+      // Check if rule matches
+      const matches = matchSemanticRule(rule, input);
+      if (matches) {
+        // Return reflection prompt as feedback
+        const reflectionFeedback = \`[REFLECTION_REQUIRED] \${rule.reflection_prompt}\`;
+        
+        log("REFLECTION:", rule.name, "-", rule.reflection_prompt);
+        writeTrace("reflection." + rule.name, { 
+          toolName, 
+          rule: rule.name,
+          reflection_prompt: rule.reflection_prompt 
+        }, "warn", reflectionFeedback);
+        
+        // Add to suggestions
+        if (!finalSuggestions) finalSuggestions = [];
+        finalSuggestions.push(reflectionFeedback);
+        
+        // Set decision to warn (non-blocking)
+        if (finalDecision === "allow") {
+          finalDecision = "warn";
+          finalFeedback = reflectionFeedback;
+        }
+      }
+    }
+  }
+
   // Output decision
   if (mode === "pre-tool-use" || mode === "stop") {
     const output = { decision: finalDecision };
