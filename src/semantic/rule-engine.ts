@@ -183,6 +183,12 @@ function globToRegex(glob: string): RegExp {
 
 /**
  * 检查单个维度是否匹配
+ *
+ * 匹配策略：
+ *   • 含通配符 (* ?) → glob 转正则
+ *   • 短模式 (< 8 字符且无空格) → 词边界匹配，避免误伤
+ *     （例如 "commit" 不会匹配 "committed" 或 "commitment"）
+ *   • 其他 → 大小写不敏感的 includes
  */
 function matchDimension(patterns: string[], value: string): boolean {
   if (!value) return false;
@@ -191,8 +197,15 @@ function matchDimension(patterns: string[], value: string): boolean {
     if (p.includes('*') || p.includes('?')) {
       return globToRegex(p).test(value);
     }
-    // 否则用包含匹配（大小写不敏感）
-    return value.toLowerCase().includes(p.toLowerCase());
+    const pLower = p.toLowerCase();
+    const vLower = value.toLowerCase();
+    // 短模式用词边界匹配，避免过于宽泛的误报
+    if (pLower.length < 8 && !/\s/.test(pLower)) {
+      const escaped = pLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:^|[^a-z])${escaped}(?:[^a-z]|$)`);
+      return re.test(vLower);
+    }
+    return vLower.includes(pLower);
   });
 }
 

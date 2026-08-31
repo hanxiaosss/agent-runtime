@@ -857,7 +857,15 @@ function matchDim(patterns, value) {
   if (!value) return false;
   return patterns.some(p => {
     if (p.includes("*") || p.includes("?")) return globRe(p).test(value);
-    return value.toLowerCase().includes(p.toLowerCase());
+    const pLower = p.toLowerCase();
+    const vLower = value.toLowerCase();
+    // Short patterns (< 8 chars, no spaces) use word-boundary matching
+    // to avoid overly broad matches (e.g. "commit" matching "committed").
+    if (pLower.length < 8 && !/\\s/.test(pLower)) {
+      const re = new RegExp("(?:^|[^a-z])" + pLower.replace(/[.*+?^\${}()|[\\]\\\\]/g, "\\\\$&") + "(?:[^a-z]|$)");
+      return re.test(vLower);
+    }
+    return vLower.includes(pLower);
   });
 }
 

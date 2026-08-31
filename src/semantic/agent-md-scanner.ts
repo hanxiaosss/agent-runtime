@@ -26,29 +26,33 @@ const AGENT_FILES = [
 
 /**
  * Rule patterns to detect in agent.md
+ *
+ * Each pattern captures the FULL meaningful text (not just the text after
+ * a trigger word) so that downstream dimension placement has enough context
+ * to produce specific, non-generic semantic rules.
  */
 const RULE_PATTERNS = [
-  // Direct prohibitions
+  // Direct prohibitions — capture the verb phrase after the trigger
   {
-    pattern: /(?:don'?t|do not|never|avoid|禁止|不要|不允许)\s+(.+?)(?:\.|$)/gim,
+    pattern: /((?:don'?t|do not|never|avoid)\s+.+?)(?:\.|$)/gim,
     category: 'custom' as const,
     action: 'deny' as const,
   },
   // Must/should requirements
   {
-    pattern: /(?:must|should|always|确保|必须|应该)\s+(.+?)(?:\.|$)/gim,
+    pattern: /((?:must|should|always|ensure)\s+.+?)(?:\.|$)/gim,
     category: 'quality' as const,
     action: 'warn' as const,
   },
   // Security rules
   {
-    pattern: /(?:security|安全|敏感|secret|密码|密钥)\s*[:：]\s*(.+?)(?:\.|$)/gim,
+    pattern: /((?:security|敏感|secret|密码|密钥)\s*[:：]\s*.+?)(?:\.|$)/gim,
     category: 'security' as const,
     action: 'deny' as const,
   },
   // Architecture rules
   {
-    pattern: /(?:architecture|架构|结构|设计)\s*[:：]\s*(.+?)(?:\.|$)/gim,
+    pattern: /((?:architecture|架构|结构|设计)\s*[:：]\s*.+?)(?:\.|$)/gim,
     category: 'architecture' as const,
     action: 'warn' as const,
   },
@@ -61,7 +65,13 @@ const RULE_PATTERNS = [
     action: 'deny' as const,
   },
   {
-    pattern: /(?:不得使用|禁止使用)\s*(.+?)(?:\.|$)/gim,
+    pattern: /((?:不得使用|禁止使用)\s*.+?)(?:\.|$)/gim,
+    category: 'custom' as const,
+    action: 'deny' as const,
+  },
+  // Chinese prohibitions (禁止/不要/不允许) — capture full phrase
+  {
+    pattern: /((?:禁止|不要|不允许)\s*.+?)(?:\.|$)/gim,
     category: 'custom' as const,
     action: 'deny' as const,
   },
@@ -288,27 +298,33 @@ function generateRuleName(text: string): string {
 
 /**
  * Extract pattern from rule text
+ *
+ * Tries to identify structured patterns (file paths, commands, etc.).
+ * Falls back to the full text if no structure is found — this preserves
+ * enough context for downstream dimension placement to make good choices.
  */
 function extractPattern(text: string): string {
   // Try to extract specific patterns
   const patterns = [
-    // File patterns
+    // File patterns (with extension)
     /([^\s]+\.[a-z]+)/i,
-    // Command patterns
+    // Command patterns (backtick-quoted)
     /`([^`]+)`/,
-    // Path patterns
+    // Path patterns (Unix-style)
     /(\/[^\s]+)/,
   ];
-  
+
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
       return match[1];
     }
   }
-  
-  // Return the whole text as pattern
-  return text;
+
+  // Return the full text as pattern — preserves context for dimension
+  // placement. Previously this returned just the captured group (e.g.,
+  // "commit" from "Don't commit"), which was too generic.
+  return text.trim();
 }
 
 /**

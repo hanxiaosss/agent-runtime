@@ -614,11 +614,26 @@ export function saveHooksToFile(hooks: SemanticHook[], outputPath: string): void
 
 /**
  * Convert an `ExtractedRule` into a `SemanticRule`.
+ *
+ * Pattern quality guard:
+ *   Single-word or very short patterns (< 8 chars) are rejected as
+ *   content rules — they match too broadly (e.g. "commit" would block
+ *   any content containing that word).  When the pattern is too generic
+ *   we return `null` so the caller can skip it.
  */
-export function generateSemanticRuleFromExtracted(rule: ExtractedRule): SemanticRule {
+export function generateSemanticRuleFromExtracted(rule: ExtractedRule): SemanticRule | null {
   const match: SemanticMatchDimensions = {};
   const pattern = rule.pattern.trim();
   const fullText = (rule.description || '').toLowerCase();
+
+  // ── Pattern quality check ──
+  // A single-word pattern used as content match would block every
+  // tool input containing that word — far too broad.
+  const isSingleWord = !/\s/.test(pattern);
+  if (isSingleWord && pattern.length < 12) {
+    // Too generic — skip this rule entirely.
+    return null;
+  }
 
   // Heuristic: which dimension does this pattern belong to?
   if (pattern.includes('/') || /\.\w{1,5}$/.test(pattern)) {
@@ -635,7 +650,11 @@ export function generateSemanticRuleFromExtracted(rule: ExtractedRule): Semantic
       // Also target write operations
       match.tool_name = ['Write', 'Edit', 'MultiEdit'];
     } else {
-      // General content match
+      // General content match — but require a multi-word pattern
+      // to avoid overly broad matching.
+      if (!/\s/.test(pattern) && pattern.length < 12) {
+        return null;
+      }
       match.content = [pattern];
     }
   }
@@ -724,7 +743,10 @@ function detectForbiddenFileTypes(text: string): string[] {
 
 /**
  * Batch-convert extracted rules into semantic rules.
+ * Rules that are too generic (single-word patterns) are filtered out.
  */
 export function generateSemanticRulesFromExtracted(rules: ExtractedRule[]): SemanticRule[] {
-  return rules.map(generateSemanticRuleFromExtracted);
+  return rules
+    .map(generateSemanticRuleFromExtracted)
+    .filter((r): r is SemanticRule => r !== null);
 }
