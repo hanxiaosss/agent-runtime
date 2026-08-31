@@ -1,12 +1,19 @@
 /**
  * Semantic Hook Generator
- * 
- * Generates semantic hooks from extracted rules and tech stack
+ *
+ * Generates semantic hooks from extracted rules and tech stack.
+ *
+ * Two output formats:
+ *   • `generateHookFromRule()` → legacy `SemanticHook` (detect/evaluate)
+ *   • `generateSemanticRuleFromExtracted()` → canonical `SemanticRule`
+ *     (multi-dimensional match)
+ *
+ * Prefer `SemanticRule` for new code.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ExtractedRule, SemanticHook, SemanticContext, SemanticMatch, SemanticDecision, TechStack } from './types.js';
+import type { ExtractedRule, SemanticHook, SemanticContext, SemanticMatch, SemanticDecision, TechStack, SemanticRule, SemanticMatchDimensions } from './types.js';
 
 /**
  * Generate a semantic hook from an extracted rule
@@ -585,11 +592,60 @@ export function saveHooksToFile(hooks: SemanticHook[], outputPath: string): void
     version: hook.version,
     source: hook.source,
   }));
-  
+
   const dir = path.dirname(outputPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  
+
   fs.writeFileSync(outputPath, JSON.stringify(hookData, null, 2));
+}
+
+// ─── ExtractedRule → SemanticRule ───────────────────────────────────
+//
+// Converts rules extracted from agent.md (via `scanProjectRules()`)
+// into the canonical `SemanticRule` format.
+//
+// The heuristic inspects the rule text and places the extracted
+// pattern into the most appropriate dimension:
+//   • file-like patterns (contains '.' or '/')  → file_path
+//   • back-ticked commands                       → command
+//   • everything else                            → content
+
+/**
+ * Convert an `ExtractedRule` into a `SemanticRule`.
+ */
+export function generateSemanticRuleFromExtracted(rule: ExtractedRule): SemanticRule {
+  const match: SemanticMatchDimensions = {};
+  const pattern = rule.pattern.trim();
+
+  // Heuristic: which dimension does this pattern belong to?
+  if (pattern.includes('/') || /\.\w{1,5}$/.test(pattern)) {
+    // Looks like a file path
+    match.file_path = [pattern.includes('*') ? pattern : `**/${pattern}`];
+  } else if (pattern.startsWith('`') && pattern.endsWith('`')) {
+    // Back-ticked command
+    match.command = [pattern.slice(1, -1)];
+  } else {
+    // General content match
+    match.content = [pattern];
+  }
+
+  return {
+    name: rule.name,
+    description: rule.description,
+    source: rule.source.file,
+    line: rule.source.line,
+    match,
+    action: rule.action,
+    feedback: rule.feedback,
+    suggestions: generateSuggestions(rule),
+  };
+}
+
+/**
+ * Batch-convert extracted rules into semantic rules.
+ */
+export function generateSemanticRulesFromExtracted(rules: ExtractedRule[]): SemanticRule[] {
+  return rules.map(generateSemanticRuleFromExtracted);
 }

@@ -16,65 +16,31 @@
  *   │ mcp_server   │ MCP 服务名（database, filesystem...）          │
  *   │ mcp_op       │ MCP 操作名（write, delete, drop...）           │
  *   │ file_type    │ 文件类型（ts, py, go, sql, yaml...）           │
- *   │ section      │ agent.md 中的规则所属章节                       │
  *   └──────────────┴──────────────────────────────────────────────┘
+ *
+ *   匹配逻辑：维度之间 AND（所有指定的维度都必须匹配），
+ *            同一维度内 OR（任一 pattern 命中即可）。
  */
 
-import type { SemanticContext, SemanticMatch, SemanticDecision } from './types.js';
+import type { SemanticContext, SemanticMatch, SemanticDecision, SemanticRule, SemanticMatchDimensions } from './types.js';
 
-// ─── 规则定义 ─────────────────────────────────────────────────────
-
-export interface SemanticRule {
-  /** 规则名 */
-  name: string;
-  /** 规则描述 */
-  description: string;
-  /** 来源文件 */
-  source: string;
-  /** 来源行号 */
-  line?: number;
-
-  /** 触发条件：至少一个维度匹配才触发 */
-  match: RuleMatch;
-
-  /** 动作 */
-  action: 'deny' | 'warn' | 'modify';
-  /** 反馈消息 */
-  feedback: string;
-  /** 建议 */
-  suggestions?: string[];
-  /** 修改后的输入（当 action 为 modify 时使用） */
-  modifiedInput?: Record<string, unknown>;
-}
-
-/**
- * 匹配条件 — 所有字段都是正则或 glob 字符串数组。
- * 同一维度内多个 pattern 是 OR 关系；
- * 不同维度之间是 AND 关系（至少提供一个维度）。
- */
-export interface RuleMatch {
-  /** 匹配工具名 */
-  tool_name?: string[];
-  /** 匹配文件路径 */
-  file_path?: string[];
-  /** 匹配写入内容 */
-  content?: string[];
-  /** 匹配 shell 命令（从 Bash/terminal 工具的 input.command 提取） */
-  command?: string[];
-  /** 匹配 MCP 服务器名 */
-  mcp_server?: string[];
-  /** 匹配 MCP 操作名 */
-  mcp_operation?: string[];
-  /** 匹配文件类型/扩展名 */
-  file_type?: string[];
-}
+// Re-export so consumers can import everything from this module
+export type { SemanticRule, SemanticMatchDimensions } from './types.js';
 
 // ─── 上下文提取器 ─────────────────────────────────────────────────
 
 /**
- * 从 SemanticContext 中提取各维度的匹配值
+ * 从 SemanticContext 中提取各维度的匹配值。
+ *
+ * 如果 context.dimensions 已经预填充（由 buildSemanticContext 完成），
+ * 直接返回；否则从 event payload 中解析。
  */
 export function extractDimensions(ctx: SemanticContext): DimensionValues {
+  // 优先使用预填充的维度
+  if (ctx.dimensions) {
+    return { ...ctx.dimensions };
+  }
+
   const result: DimensionValues = {
     tool_name: '',
     file_path: '',
@@ -88,7 +54,7 @@ export function extractDimensions(ctx: SemanticContext): DimensionValues {
   const event = ctx.event as any;
   const payload = event.payload || {};
 
-  // tool_name
+  // tool_name — 来自 tool.before / tool.after
   result.tool_name = payload.toolName || '';
 
   // file_path — 从 code context 或 tool input 中提取
@@ -101,6 +67,15 @@ export function extractDimensions(ctx: SemanticContext): DimensionValues {
     result.file_type = ext;
   } else if (payload.input?.path) {
     result.file_path = payload.input.path;
+    if (payload.input.path.includes('.')) {
+      result.file_type = payload.input.path.split('.').pop() || '';
+    }
+  } else if (payload.filePath) {
+    // code.before_modify / code.after_modify
+    result.file_path = payload.filePath;
+    if (payload.filePath.includes('.')) {
+      result.file_type = payload.filePath.split('.').pop() || '';
+    }
   }
 
   // content — 写入内容
@@ -108,6 +83,8 @@ export function extractDimensions(ctx: SemanticContext): DimensionValues {
     result.content = ctx.code.content;
   } else if (payload.input?.content) {
     result.content = String(payload.input.content);
+  } else if (payload.incomingContent) {
+    result.content = String(payload.incomingContent);
   }
 
   // command — 从 Bash/terminal/shell 工具中提取
@@ -130,6 +107,9 @@ export function extractDimensions(ctx: SemanticContext): DimensionValues {
       result.mcp_operation = parts.slice(2).join('_');
     }
   }
+  // 也可以从 mcp.before / mcp.after 事件的 payload 直接取
+  if (payload.server) result.mcp_server = payload.server;
+  if (payload.operation) result.mcp_operation = payload.operation;
 
   return result;
 }
@@ -142,6 +122,31 @@ interface DimensionValues {
   mcp_server: string;
   mcp_operation: string;
   file_type: string;
+}
+
+// ─── 事件名匹配 ────────────────────────────────────────────────────
+
+/**
+ * 检查规则是否适用于当前事件名。
+ * 规则可以指定 events 数组来限制触发范围。
+ */
+function matchesEvent(rule: SemanticRule, eventName: string): boolean {
+  const events = rule.events;
+  if (!events || events.length === 0) {
+    // 未指定 events — 默认适用于所有 before 类事件
+    return eventName.endsWith('.before') || eventName === 'tool.before';
+  }
+
+  return events.some((e) => {
+    if (e === '*') return true;
+    if (e === eventName) return true;
+    // glob: "tool.*" 匹配 "tool.before"
+    if (e.endsWith('.*')) {
+      const prefix = e.slice(0, -2);
+      return eventName.startsWith(prefix + '.');
+    }
+    return false;
+  });
 }
 
 // ─── 匹配引擎 ─────────────────────────────────────────────────────
@@ -195,11 +200,19 @@ function matchDimension(patterns: string[], value: string): boolean {
  * 评估一条规则是否匹配当前上下文。
  *
  * 匹配逻辑：
- *   1. 不同维度之间是 AND — 所有提供的维度都必须匹配
- *   2. 同一维度内多个 pattern 是 OR — 任一 pattern 匹配即可
- *   3. 至少要提供一个维度
+ *   0. 规则必须 enabled !== false
+ *   1. 事件名必须匹配规则的 events 范围
+ *   2. 不同维度之间是 AND — 所有提供的维度都必须匹配
+ *   3. 同一维度内多个 pattern 是 OR — 任一 pattern 匹配即可
+ *   4. 至少要提供一个维度
  */
 export function evaluateRule(rule: SemanticRule, ctx: SemanticContext): SemanticMatch | null {
+  // 0. 检查 enabled
+  if (rule.enabled === false) return null;
+
+  // 1. 检查事件名
+  if (!matchesEvent(rule, ctx.event.name)) return null;
+
   const dims = extractDimensions(ctx);
   const match = rule.match;
   const evidence: string[] = [];
@@ -518,9 +531,14 @@ export const BUILT_IN_RULES: SemanticRule[] = [
 export class SemanticRuleEngine {
   private rules: SemanticRule[] = [];
 
-  constructor() {
-    // 加载内置规则
-    this.rules = [...BUILT_IN_RULES];
+  /**
+   * @param loadBuiltIn  是否加载内置红线规则。默认 true；传 false
+   *                     可得到一张"白板"，适合完全自定义场景。
+   */
+  constructor(loadBuiltIn = true) {
+    if (loadBuiltIn) {
+      this.rules = [...BUILT_IN_RULES];
+    }
   }
 
   /** 添加自定义规则 */
@@ -533,9 +551,15 @@ export class SemanticRuleEngine {
     this.rules.push(...rules);
   }
 
-  /** 移除规则 */
+  /** 移除规则（按 name） */
   removeRule(name: string): void {
     this.rules = this.rules.filter(r => r.name !== name);
+  }
+
+  /** 按名称启用 / 禁用规则 */
+  setRuleEnabled(name: string, enabled: boolean): void {
+    const rule = this.rules.find(r => r.name === name);
+    if (rule) rule.enabled = enabled;
   }
 
   /** 获取所有规则 */
@@ -543,8 +567,19 @@ export class SemanticRuleEngine {
     return [...this.rules];
   }
 
+  /** 获取当前启用的规则 */
+  getEnabledRules(): SemanticRule[] {
+    return this.rules.filter(r => r.enabled !== false);
+  }
+
+  /** 按来源过滤规则 */
+  getRulesBySource(source: string): SemanticRule[] {
+    return this.rules.filter(r => r.source === source);
+  }
+
   /**
-   * 评估所有规则，返回匹配结果列表
+   * 评估所有规则，返回匹配结果列表。
+   * 结果按规则 priority 升序排列（priority 小的在前）。
    */
   evaluate(ctx: SemanticContext): SemanticMatch[] {
     const matches: SemanticMatch[] = [];
@@ -556,27 +591,41 @@ export class SemanticRuleEngine {
       }
     }
 
+    // 按规则 priority 排序（默认 100）
+    const rulePriority = new Map(this.rules.map(r => [r.name, r.priority ?? 100]));
+    matches.sort((a, b) => (rulePriority.get(a.hookName) ?? 100) - (rulePriority.get(b.hookName) ?? 100));
+
     return matches;
   }
 
   /**
-   * 评估并返回最严格的决策
+   * 评估并返回最严格的决策。
+   *
+   * 决策顺序：
+   *   1. 先按 action 严格度排序：deny > modify > warn
+   *   2. 同等 action 时，按规则 priority 排序（低值优先）
    */
   resolve(ctx: SemanticContext): SemanticDecision | null {
     const matches = this.evaluate(ctx);
     if (matches.length === 0) return null;
 
     // 找到最严格的匹配
-    const priority: Record<string, number> = { deny: 0, modify: 1, warn: 2 };
+    const actionPriority: Record<string, number> = { deny: 0, modify: 1, warn: 2 };
+    const rulePriority = new Map(this.rules.map(r => [r.name, r.priority ?? 100]));
+
     let best: SemanticMatch | null = null;
-    let bestPriority = Infinity;
+    let bestActionP = Infinity;
+    let bestRuleP = Infinity;
 
     for (const match of matches) {
-      const action = match.metadata?.action || 'warn';
-      const p = priority[action] ?? 3;
-      if (p < bestPriority) {
+      const action = (match.metadata?.action as string) || 'warn';
+      const ap = actionPriority[action] ?? 3;
+      const rp = rulePriority.get(match.hookName) ?? 100;
+
+      if (ap < bestActionP || (ap === bestActionP && rp < bestRuleP)) {
         best = match;
-        bestPriority = p;
+        bestActionP = ap;
+        bestRuleP = rp;
       }
     }
 
@@ -586,7 +635,7 @@ export class SemanticRuleEngine {
     const rule = this.rules.find(r => r.name === best!.hookName);
 
     const decision: SemanticDecision = {
-      action: best.metadata?.action || 'warn',
+      action: (best.metadata?.action as SemanticDecision['action']) || 'warn',
       reason: best.rule,
       feedback: rule?.feedback || best.rule,
       suggestions: rule?.suggestions,

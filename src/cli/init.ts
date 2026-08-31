@@ -212,6 +212,47 @@ rules:
       - "Use pull requests for code review"
 `;
 
+const SEMANTIC_RULES_YAML = `# Semantic Rules — Multi-dimensional hook matching
+#
+# Unlike declarative policies (which match on event payload fields),
+# semantic rules match on *operational dimensions*:
+#
+#   tool_name     — tool name (Write, Bash, mcp__server__op, …)
+#   file_path     — file path glob
+#   content       — content pattern (written code, inline, …)
+#   command       — shell command (from Bash tool input.command)
+#   mcp_server    — MCP server name
+#   mcp_operation — MCP operation name
+#   file_type     — file extension (ts, py, go, sql, …)
+#
+# Matching logic:
+#   • All specified dimensions must match (AND across dimensions)
+#   • Within a dimension, any pattern can match (OR within dimension)
+#   • At least one dimension must be specified per rule
+
+rules:
+  # Example: block eval() in TypeScript source files
+  # - name: no-eval-in-src
+  #   description: eval() is a security risk in source files
+  #   match:
+  #     file_path: ["src/**"]
+  #     file_type: [ts, js, tsx, jsx]
+  #     content: ["eval(", "new Function("]
+  #   action: deny
+  #   feedback: "eval() is not allowed in source files. Use safer alternatives."
+  #   suggestions:
+  #     - "Use JSON.parse() for JSON data"
+  #     - "Use structured data instead of dynamic code"
+
+  # Example: warn when modifying configuration files
+  # - name: warn-config-change
+  #   description: Configuration changes may affect the build
+  #   match:
+  #     file_path: ["**/tsconfig.json", "**/package.json", "**/.eslintrc*"]
+  #   action: warn
+  #   feedback: "You are modifying a project configuration file. Ensure this is intentional."
+`;
+
 const HANDLER_MJS = `#!/usr/bin/env node
 /**
  * Agent Runtime — Self-Contained Hook Handler
@@ -975,10 +1016,53 @@ This directory contains the project-level agent runtime configuration.
 │   ├── protected-files.yaml
 │   ├── mcp-safety.yaml
 │   └── git-safety.yaml
+├── semantic-rules/      # Multi-dimensional semantic rules (YAML)
+│   └── custom.yaml
 ├── hooks/
 │   └── handler.mjs      # Unified hook entry point
+├── semantic-hooks/      # Auto-generated hook metadata
+│   └── hooks.json
 └── traces/              # Runtime trace data (JSONL)
 \`\`\`
+
+## Two Hook Systems
+
+### 1. Declarative Policies (policies/)
+
+Match on event fields via dot-notation paths:
+
+\`\`\`yaml
+name: my-policy
+rules:
+  - name: block-readme
+    when: code.before_modify
+    match:
+      - field: filePath
+        pattern: "**/README.md"
+    action: deny
+    feedback: "README is managed separately."
+\`\`\`
+
+### 2. Semantic Rules (semantic-rules/)
+
+Match on multiple operational dimensions simultaneously:
+
+\`\`\`yaml
+rules:
+  - name: no-eval-in-src
+    description: Block eval() in source files
+    match:
+      file_path: ["src/**"]
+      file_type: [ts, js]
+      content: ["eval(", "new Function("]
+    action: deny
+    feedback: "eval() is not allowed in source files."
+\`\`\`
+
+Dimensions: \`tool_name\`, \`file_path\`, \`content\`, \`command\`,
+\`mcp_server\`, \`mcp_operation\`, \`file_type\`.
+All specified dimensions must match (AND); within a dimension any
+pattern can match (OR).
 
 ## Setup
 
@@ -1536,6 +1620,7 @@ export async function runInit(args: string[]): Promise<void> {
 
   // Create directories
   fs.mkdirSync(path.join(harnessDir, "policies"), { recursive: true });
+  fs.mkdirSync(path.join(harnessDir, "semantic-rules"), { recursive: true });
   fs.mkdirSync(path.join(harnessDir, "hooks"), { recursive: true });
   fs.mkdirSync(path.join(harnessDir, "traces"), { recursive: true });
 
@@ -1545,6 +1630,7 @@ export async function runInit(args: string[]): Promise<void> {
     ["policies/protected-files.yaml", PROTECTED_FILES_YAML],
     ["policies/mcp-safety.yaml", MCP_SAFETY_YAML],
     ["policies/git-safety.yaml", GIT_SAFETY_YAML],
+    ["semantic-rules/custom.yaml", SEMANTIC_RULES_YAML],
     ["hooks/handler.mjs", HANDLER_MJS],
     ["README.md", README_MD],
   ];
@@ -1563,38 +1649,58 @@ export async function runInit(args: string[]): Promise<void> {
   // Initialize semantic hooks
   console.log("\n  ✓ Scanning project for semantic rules...");
   try {
-    const { createSemanticEngine } = await import("../semantic/engine.js");
-    const engine = await createSemanticEngine(targetDir);
-    const hooks = engine.getHooks();
-    const techStackHooks = engine.getHooksBySource('tech-stack');
-    const agentMdHooks = engine.getHooksBySource('agent-md');
-    
-    console.log(`  ✓ Generated ${hooks.length} semantic hooks`);
-    if (techStackHooks.length > 0) {
-      console.log(`    ├─ ${techStackHooks.length} tech stack hooks`);
+    const { SemanticHookAdapter } = await import("../semantic/adapter.js");
+    const { loadSemanticRulesFromDir } = await import("../cli/yaml-loader.js");
+
+    const adapter = new SemanticHookAdapter({ projectRoot: targetDir });
+
+    // Load user-defined semantic rules from YAML
+    const yamlRulesDir = path.join(harnessDir, "semantic-rules");
+    const yamlRules = loadSemanticRulesFromDir(yamlRulesDir);
+    if (yamlRules.length > 0) {
+      adapter.addRules(yamlRules);
+      console.log(`    ├─ ${yamlRules.length} YAML semantic rules`);
     }
-    if (agentMdHooks.length > 0) {
-      console.log(`    └─ ${agentMdHooks.length} agent.md hooks`);
+
+    // Scan agent.md and convert to semantic rules
+    try {
+      const { scanProjectRules } = await import("../semantic/agent-md-scanner.js");
+      const { generateSemanticRulesFromExtracted } = await import("../semantic/hook-generator.js");
+      const extracted = await scanProjectRules(targetDir);
+      const agentMdRules = generateSemanticRulesFromExtracted(extracted);
+      if (agentMdRules.length > 0) {
+        adapter.addRules(agentMdRules);
+        console.log(`    ├─ ${agentMdRules.length} agent.md rules`);
+      }
+    } catch {
+      // agent.md scanning is optional
     }
-    
+
+    const allRules = adapter.ruleEngine.getRules();
+    const builtInRules = adapter.ruleEngine.getRulesBySource('built-in');
+    console.log(`  ✓ ${allRules.length} semantic rules (${builtInRules.length} built-in)`);
+
     // Create semantic-hooks directory and save metadata
     const semanticDir = path.join(harnessDir, "semantic-hooks");
     if (!fs.existsSync(semanticDir)) {
       fs.mkdirSync(semanticDir, { recursive: true });
     }
-    
-    const hooksMetadata = hooks.map(h => ({
-      name: h.name,
-      description: h.description,
-      version: h.version,
-      source: h.source,
+
+    const rulesMetadata = allRules.map(r => ({
+      name: r.name,
+      description: r.description,
+      source: r.source,
+      action: r.action,
+      enabled: r.enabled !== false,
+      priority: r.priority ?? 100,
+      match: r.match,
     }));
-    
+
     fs.writeFileSync(
       path.join(semanticDir, "hooks.json"),
-      JSON.stringify(hooksMetadata, null, 2)
+      JSON.stringify(rulesMetadata, null, 2)
     );
-    console.log(`  ✓ Saved hooks metadata to .harness/semantic-hooks/hooks.json`);
+    console.log(`  ✓ Saved rules metadata to .harness/semantic-hooks/hooks.json`);
   } catch (err: any) {
     console.log(`  ⚠ Semantic hook initialization skipped: ${err.message}`);
   }

@@ -116,6 +116,9 @@ export {
   loadPolicyFromFile,
   loadPoliciesFromDir,
   loadHarnessConfig,
+  loadSemanticRuleFile,
+  loadSemanticRulesFromYAML,
+  loadSemanticRulesFromDir,
   type HarnessConfig,
 } from "./cli/index.js";
 
@@ -129,13 +132,26 @@ export {
   type ExtractedRule,
   type TechStack,
   type SemanticHookConfig,
+  type SemanticRule,
+  type SemanticMatchDimensions,
   // Engine
   SemanticHookEngine,
   createSemanticEngine,
   buildSemanticContext,
+  // Rule Engine
+  SemanticRuleEngine,
+  evaluateRule,
+  extractDimensions,
+  BUILT_IN_RULES,
+  // Adapter (bridge to hook pipeline)
+  SemanticHookAdapter,
+  decisionToHookResult,
+  type SemanticAdapterOptions,
   // Generator
   generateHookFromRule,
   generateTechStackHooks,
+  generateSemanticRuleFromExtracted,
+  generateSemanticRulesFromExtracted,
   saveHooksToFile,
   // Detectors
   detectTechStack,

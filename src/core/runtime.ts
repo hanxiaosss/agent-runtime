@@ -16,6 +16,7 @@ import {
   resolvePipelineResult,
 } from "./hook.js";
 import { PolicyEngine, type PolicyDefinition } from "./policy.js";
+import type { SemanticRule } from "../semantic/types.js";
 
 // ─── Adapter Interface ──────────────────────────────────────────────
 
@@ -73,6 +74,13 @@ export class AgentRuntime {
   private config: Required<RuntimeConfig>;
   private running = false;
   private correlationId: string;
+
+  /**
+   * Semantic hook adapter — lazily created when `enableSemanticHooks()`
+   * is called.  When present, it is auto-registered into the hook
+   * pipeline during `start()`.
+   */
+  private semanticAdapter: import("../semantic/adapter.js").SemanticHookAdapter | null = null;
 
   constructor(config: RuntimeConfig = {}) {
     this.config = {
@@ -147,6 +155,83 @@ export class AgentRuntime {
     name?: string,
   ): void {
     this.on({ events, handler, name });
+  }
+
+  // ─── Semantic Hook Integration ────────────────────────────────────
+
+  /**
+   * Enable the semantic hook system.
+   *
+   * This creates a `SemanticHookAdapter` (if not already created),
+   * registers it into the hook pipeline at priority 500 (between
+   * custom hooks at 100 and the policy engine at 1000), and
+   * optionally loads agent.md rules from the project.
+   *
+   * @param projectRoot  Project root for agent.md scanning.
+   *                     Defaults to `process.cwd()`.
+   * @param options      Additional adapter options.
+   */
+  async enableSemanticHooks(
+    projectRoot?: string,
+    options?: {
+      loadBuiltIn?: boolean;
+      loadAgentMd?: boolean;
+    },
+  ): Promise<void> {
+    // Dynamic import to avoid circular dependency at module load time
+    const { SemanticHookAdapter } = await import("../semantic/adapter.js");
+
+    if (!this.semanticAdapter) {
+      this.semanticAdapter = new SemanticHookAdapter({
+        projectRoot,
+        loadBuiltIn: options?.loadBuiltIn ?? true,
+      });
+    }
+
+    // Optionally scan agent.md for rules
+    if (options?.loadAgentMd !== false && projectRoot) {
+      try {
+        const { scanProjectRules } = await import("../semantic/agent-md-scanner.js");
+        const { generateSemanticRulesFromExtracted } = await import("../semantic/hook-generator.js");
+        const extracted = await scanProjectRules(projectRoot);
+        const rules = generateSemanticRulesFromExtracted(extracted);
+        this.semanticAdapter.addRules(rules);
+        this.log(`[runtime] Loaded ${rules.length} rules from agent.md`);
+      } catch (err) {
+        this.log(`[runtime] Failed to load agent.md rules: ${err}`);
+      }
+    }
+
+    // Register into the hook pipeline (idempotent)
+    const existingIdx = this.hooks.findIndex((h) => h.name === "semantic-rules");
+    if (existingIdx >= 0) {
+      this.hooks.splice(existingIdx, 1);
+    }
+
+    this.on({
+      events: "*",
+      handler: this.semanticAdapter.toHookHandler(),
+      name: "semantic-rules",
+      priority: 500,
+    });
+
+    this.log("[runtime] Semantic hooks enabled ✓");
+  }
+
+  /**
+   * Add a semantic rule at runtime.
+   * Calls `enableSemanticHooks()` automatically if not yet enabled.
+   */
+  async addSemanticRule(rule: SemanticRule): Promise<void> {
+    if (!this.semanticAdapter) {
+      await this.enableSemanticHooks();
+    }
+    this.semanticAdapter!.addRule(rule);
+  }
+
+  /** Get the semantic adapter (null if not enabled) */
+  getSemanticAdapter(): import("../semantic/adapter.js").SemanticHookAdapter | null {
+    return this.semanticAdapter;
   }
 
   // ─── Event Processing ───────────────────────────────────────────
