@@ -15,6 +15,9 @@ rules:
           - "**/*.env"
     action: deny
     feedback: "Cannot modify environment files (.env). These contain secrets and must be edited manually."
+    suggestions:
+      - "Ask the human user to edit .env files"
+      - "Use environment variables instead"
 
   - name: block-lock-files
     when: code.before_modify
@@ -26,6 +29,8 @@ rules:
           - "**/yarn.lock"
     action: deny
     feedback: "Cannot modify lock files directly. Run the package manager instead."
+    suggestions:
+      - "Use npm install, pnpm add, yarn add, etc."
 
   - name: block-core-files
     when: code.before_modify
@@ -36,6 +41,8 @@ rules:
           - "src/kernel/**"
     action: deny
     feedback: "Core module files require human review. Changes to core modules need explicit approval."
+    suggestions:
+      - "Ask for human review before modifying core files"
 
   - name: warn-config-changes
     when: code.before_modify
@@ -46,3 +53,6 @@ rules:
           - "**/package.json"
     action: warn
     feedback: "You are modifying a project configuration file. Ensure this is intentional."
+    suggestions:
+      - "Verify the changes are necessary"
+      - "Document the reason for changes"

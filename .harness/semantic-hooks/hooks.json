@@ -1,86 +1,392 @@
 [
   {
-    "name": "redline-protection",
-    "description": "Protect agent instruction files and harness configuration from modification",
-    "version": "1.0.0",
-    "source": "tech-stack"
+    "name": "redline-agent-files",
+    "description": "Agent instruction files are read-only for AI agents",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "**/agent.md",
+        "**/AGENT.md",
+        "**/.agent.md",
+        "**/agents.md",
+        "**/AGENTS.md",
+        "**/.agents.md",
+        "**/CLAUDE.md",
+        "**/COPILOT.md",
+        "**/.cursorrules",
+        "**/.cursor/rules.md"
+      ]
+    }
   },
   {
-    "name": "environment-protection",
-    "description": "Prevent modification of environment files",
-    "version": "1.0.0",
-    "source": "tech-stack"
+    "name": "redline-harness-config",
+    "description": "Harness configuration is read-only for AI agents",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "**/.harness/**"
+      ]
+    }
   },
   {
-    "name": "secret-detection",
-    "description": "Detect hardcoded secrets",
-    "version": "1.0.0",
-    "source": "tech-stack"
+    "name": "env-protection",
+    "description": "Environment files contain secrets and must not be modified by agents",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "**/.env",
+        "**/.env.*",
+        "**/*.env"
+      ]
+    }
   },
   {
-    "name": "production-protection",
-    "description": "Prevent direct production modifications",
-    "version": "1.0.0",
-    "source": "tech-stack"
+    "name": "lock-file-protection",
+    "description": "Lock files must not be modified directly",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "**/package-lock.json",
+        "**/pnpm-lock.yaml",
+        "**/yarn.lock",
+        "**/poetry.lock",
+        "**/Pipfile.lock",
+        "**/Gemfile.lock",
+        "**/Cargo.lock",
+        "**/go.sum"
+      ]
+    }
+  },
+  {
+    "name": "production-config-protection",
+    "description": "Production configuration must not be modified directly",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "**/production.yaml",
+        "**/production.yml",
+        "**/production.json",
+        "**/production.env",
+        "**/prod.yaml",
+        "**/prod.yml",
+        "**/prod.json",
+        "**/prod.env",
+        "**/production/**",
+        "**/prod/**"
+      ]
+    }
+  },
+  {
+    "name": "dangerous-shell-rm",
+    "description": "Dangerous rm commands are blocked",
+    "source": "built-in",
+    "action": "modify",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "command": [
+        "rm -rf /",
+        "rm -rf ~",
+        "rm -rf .",
+        "rm -rf *"
+      ]
+    }
+  },
+  {
+    "name": "dangerous-shell-git-force",
+    "description": "Git force push is blocked",
+    "source": "built-in",
+    "action": "modify",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "command": [
+        "git push --force",
+        "git push -f"
+      ]
+    }
+  },
+  {
+    "name": "dangerous-db-drop",
+    "description": "DROP TABLE/DATABASE is blocked",
+    "source": "built-in",
+    "action": "modify",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "DROP TABLE",
+        "DROP DATABASE",
+        "TRUNCATE TABLE"
+      ]
+    }
+  },
+  {
+    "name": "secret-hardcoded-password",
+    "description": "Hardcoded passwords detected",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "password = \"",
+        "password = '",
+        "passwd = \"",
+        "passwd = '",
+        "pwd = \"",
+        "pwd = '"
+      ]
+    }
+  },
+  {
+    "name": "secret-hardcoded-api-key",
+    "description": "Hardcoded API keys detected",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "api_key = \"",
+        "api_key = '",
+        "apiKey = \"",
+        "apiKey = '",
+        "API_KEY = \"",
+        "API_KEY = '",
+        "apikey = \"",
+        "apikey = '"
+      ]
+    }
+  },
+  {
+    "name": "secret-private-key",
+    "description": "Private key embedded in code",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----BEGIN EC PRIVATE KEY-----",
+        "-----BEGIN OPENSSH PRIVATE KEY-----"
+      ]
+    }
+  },
+  {
+    "name": "mcp-database-write",
+    "description": "Direct database write via MCP is blocked",
+    "source": "built-in",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "mcp_server": [
+        "database",
+        "db",
+        "sql",
+        "postgres",
+        "mysql",
+        "mongodb"
+      ],
+      "mcp_operation": [
+        "write",
+        "delete",
+        "drop",
+        "truncate",
+        "alter",
+        "update",
+        "insert",
+        "execute"
+      ]
+    }
+  },
+  {
+    "name": "react-xss-dangerouslySetInnerHTML",
+    "description": "dangerouslySetInnerHTML can lead to XSS",
+    "source": "built-in",
+    "action": "warn",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_type": [
+        "tsx",
+        "jsx",
+        "ts",
+        "js"
+      ],
+      "content": [
+        "dangerouslySetInnerHTML"
+      ]
+    }
+  },
+  {
+    "name": "vue-xss-v-html",
+    "description": "v-html can lead to XSS",
+    "source": "built-in",
+    "action": "warn",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_type": [
+        "vue"
+      ],
+      "content": [
+        "v-html"
+      ]
+    }
+  },
+  {
+    "name": "eval-injection",
+    "description": "eval() is a security risk",
+    "source": "built-in",
+    "action": "warn",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_type": [
+        "ts",
+        "js",
+        "tsx",
+        "jsx",
+        "py",
+        "rb"
+      ],
+      "content": [
+        "eval(",
+        "new Function("
+      ]
+    }
+  },
+  {
+    "name": "core-module-protection",
+    "description": "Core module files require human review",
+    "source": "built-in",
+    "action": "warn",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "**/src/core/**",
+        "**/src/kernel/**",
+        "**/src/runtime/**"
+      ]
+    }
+  },
+  {
+    "name": "no-typescript",
+    "description": "Block TypeScript files",
+    "source": "E:\\code\\agent-runtime\\.harness\\semantic-rules\\test.yaml",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "tool_name": [
+        "Write",
+        "Edit"
+      ],
+      "file_type": [
+        "ts",
+        "tsx"
+      ]
+    }
+  },
+  {
+    "name": "no-eval-in-src",
+    "description": "Block eval in source",
+    "source": "E:\\code\\agent-runtime\\.harness\\semantic-rules\\test.yaml",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "file_path": [
+        "src/**"
+      ],
+      "content": [
+        "eval(",
+        "new Function("
+      ]
+    }
   },
   {
     "name": "commit",
     "description": "commit",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "don-t-commit-env-files",
-    "description": "Don't commit .env files",
-    "version": "1.0.0",
-    "source": "agent-md"
+    "source": "E:\\code\\agent-runtime\\agent.md",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "commit"
+      ]
+    }
   },
   {
     "name": "use-eval-with-user-input",
     "description": "use eval() with user input",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "never-use-eval-with-user-input",
-    "description": "Never use eval() with user input",
-    "version": "1.0.0",
-    "source": "agent-md"
+    "source": "E:\\code\\agent-runtime\\agent.md",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "use eval() with user input"
+      ]
+    }
   },
   {
     "name": "run-migrations-directly-on-production",
     "description": "run migrations directly on production",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "never-run-migrations-directly-on-production",
-    "description": "Never run migrations directly on production",
-    "version": "1.0.0",
-    "source": "agent-md"
+    "source": "E:\\code\\agent-runtime\\agent.md",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "run migrations directly on production"
+      ]
+    }
   },
   {
     "name": "backup-before-schema-changes",
     "description": "backup before schema changes",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "always-backup-before-schema-changes",
-    "description": "Always backup before schema changes",
-    "version": "1.0.0",
-    "source": "agent-md"
+    "source": "E:\\code\\agent-runtime\\agent.md",
+    "action": "warn",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "backup before schema changes"
+      ]
+    }
   },
   {
     "name": "modify-production-config-directly",
     "description": "modify production config directly",
-    "version": "1.0.0",
-    "source": "agent-md"
-  },
-  {
-    "name": "don-t-modify-production-config-directly",
-    "description": "Don't modify production config directly",
-    "version": "1.0.0",
-    "source": "agent-md"
+    "source": "E:\\code\\agent-runtime\\agent.md",
+    "action": "deny",
+    "enabled": true,
+    "priority": 100,
+    "match": {
+      "content": [
+        "modify production config directly"
+      ]
+    }
   }
 ]

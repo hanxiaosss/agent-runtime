@@ -11,20 +11,57 @@ This directory contains the project-level agent runtime configuration.
 │   ├── protected-files.yaml
 │   ├── mcp-safety.yaml
 │   └── git-safety.yaml
+├── semantic-rules/      # Multi-dimensional semantic rules (YAML)
+│   └── custom.yaml
 ├── hooks/
 │   └── handler.mjs      # Unified hook entry point
+├── semantic-hooks/      # Auto-generated hook metadata
+│   └── hooks.json
 └── traces/              # Runtime trace data (JSONL)
 ```
 
-## Setup
+## Two Hook Systems
 
-### 1. Install hannah-agent-runtime
+### 1. Declarative Policies (policies/)
 
-```bash
-npm install -D hannah-agent-runtime
+Match on event fields via dot-notation paths:
+
+```yaml
+name: my-policy
+rules:
+  - name: block-readme
+    when: code.before_modify
+    match:
+      - field: filePath
+        pattern: "**/README.md"
+    action: deny
+    feedback: "README is managed separately."
 ```
 
-### 2. Configure your agent
+### 2. Semantic Rules (semantic-rules/)
+
+Match on multiple operational dimensions simultaneously:
+
+```yaml
+rules:
+  - name: no-eval-in-src
+    description: Block eval() in source files
+    match:
+      file_path: ["src/**"]
+      file_type: [ts, js]
+      content: ["eval(", "new Function("]
+    action: deny
+    feedback: "eval() is not allowed in source files."
+```
+
+Dimensions: `tool_name`, `file_path`, `content`, `command`,
+`mcp_server`, `mcp_operation`, `file_type`.
+All specified dimensions must match (AND); within a dimension any
+pattern can match (OR).
+
+## Setup
+
+### 1. Configure your agent
 
 #### Claude Code
 
@@ -90,12 +127,16 @@ Add to `.codex/hooks.json`:
 
 ```json
 {
-  "PreToolUse": [
-    { "command": "node .harness/hooks/handler.mjs pre-tool-use" }
-  ],
-  "PostToolUse": [
-    { "command": "node .harness/hooks/handler.mjs post-tool-use" }
-  ]
+  "description": "Agent runtime hooks",
+  "hooks": {
+    "matcher": "*",
+    "PreToolUse": [
+      { "command": "node .harness/hooks/handler.mjs pre-tool-use" }
+    ],
+    "PostToolUse": [
+      { "command": "node .harness/hooks/handler.mjs post-tool-use" }
+    ]
+  }
 }
 ```
 

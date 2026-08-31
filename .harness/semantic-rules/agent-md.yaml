@@ -1,0 +1,35 @@
+# Auto-generated from agent.md — do not edit manually
+rules:
+  - name: "commit"
+    description: "commit"
+    match:
+      content: ["commit"]
+    action: deny
+    feedback: "Blocked: commit"
+  - name: "use-eval-with-user-input"
+    description: "use eval() with user input"
+    match:
+      content: ["use eval() with user input"]
+    action: deny
+    feedback: "Blocked: use eval() with user input"
+  - name: "run-migrations-directly-on-production"
+    description: "run migrations directly on production"
+    match:
+      content: ["run migrations directly on production"]
+    action: deny
+    feedback: "Blocked: run migrations directly on production"
+    suggestions: ["Review security implications before proceeding", "Consider using environment variables for sensitive data", "Use staging environment for testing", "Follow deployment pipeline for production changes", "Backup database before making changes", "Test migrations in development first"]
+  - name: "backup-before-schema-changes"
+    description: "backup before schema changes"
+    match:
+      content: ["backup before schema changes"]
+    action: warn
+    feedback: "Warning: backup before schema changes"
+    suggestions: ["Follow coding standards", "Consider code review implications"]
+  - name: "modify-production-config-directly"
+    description: "modify production config directly"
+    match:
+      content: ["modify production config directly"]
+    action: deny
+    feedback: "Blocked: modify production config directly"
+    suggestions: ["Review security implications before proceeding", "Consider using environment variables for sensitive data", "Use staging environment for testing", "Follow deployment pipeline for production changes"]

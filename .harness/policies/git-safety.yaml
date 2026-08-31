@@ -18,8 +18,12 @@ rules:
         pattern:
           - "*push --force*"
           - "*push -f*"
-    action: deny
-    feedback: "Force push (git push --force) is not allowed. Use regular push or push with lease."
+    action: modify
+    feedback: "Force push is not allowed. Use regular push or push with lease."
+    modifiedInput:
+      command: "git push --force-with-lease"
+    suggestions:
+      - "Use git push --force-with-lease instead"
 
   - name: block-hard-reset
     when: tool.before
@@ -34,6 +38,9 @@ rules:
         pattern: "*reset --hard*"
     action: deny
     feedback: "git reset --hard is not allowed. This discards uncommitted changes permanently."
+    suggestions:
+      - "Use git stash instead"
+      - "Use git checkout to discard specific files"
 
   - name: block-main-push
     when: tool.before
@@ -50,3 +57,6 @@ rules:
           - "*push*master*"
     action: deny
     feedback: "Direct push to main/master is not allowed. Use feature branches and pull requests."
+    suggestions:
+      - "Create a feature branch"
+      - "Use pull requests for code review"

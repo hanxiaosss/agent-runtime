@@ -18,6 +18,8 @@ rules:
           - "truncate"
     action: deny
     feedback: "Direct database write operations are not allowed. Use the application API layer."
+    suggestions:
+      - "Use the application API instead of direct database access"
 
   - name: warn-database-reads
     when: mcp.before
@@ -26,6 +28,9 @@ rules:
         pattern: "database"
     action: warn
     feedback: "Database access detected. Ensure queries are read-only."
+    suggestions:
+      - "Ensure queries are read-only"
+      - "Don't expose sensitive data"
 
   - name: block-filesystem-delete
     when: mcp.before
@@ -39,3 +44,5 @@ rules:
           - "unlink"
     action: deny
     feedback: "File deletion through MCP is not allowed."
+    suggestions:
+      - "Use the application API for file operations"

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Agent Runtime — Unified Hook Handler (ESM)
+ * Agent Runtime — Self-Contained Hook Handler
  *
- * This script is the single entry point for all agent hooks.
- * It reads stdin JSON, processes events through the policy engine,
- * writes traces, and outputs decisions.
+ * ZERO external dependencies. All logic is embedded.
+ * Reads stdin JSON → evaluates policies → writes traces → outputs decisions.
  *
  * Usage (in agent settings):
  *   PreToolUse:  node .harness/hooks/handler.mjs pre-tool-use
@@ -18,7 +17,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,11 +30,7 @@ const LOG_FILE = process.env.HANNAH_LOG_FILE;
 function log(...args) {
   const timestamp = new Date().toISOString();
   const message = `[${timestamp}] [hannah] ${args.join(" ")}`;
-  
-  // Always log to stderr (doesn't interfere with stdout JSON)
   console.error(message);
-  
-  // Optionally log to file
   if (LOG_FILE) {
     try {
       const logDir = path.dirname(LOG_FILE);
@@ -46,221 +41,633 @@ function log(...args) {
 }
 
 function debug(...args) {
-  if (DEBUG) {
-    log("[DEBUG]", ...args);
-  }
+  if (DEBUG) log("[DEBUG]", ...args);
 }
 
-// ─── Resolve hannah-agent-runtime ──────────────────────────────────────────
-// Try local project install first, then global
+// ─── Paths ──────────────────────────────────────────────────────────
 
 function findProjectRoot() {
   // .harness/hooks/handler.mjs → project root is 2 levels up
   return path.resolve(__dirname, "..", "..");
 }
 
-async function loadRuntime() {
-  const projectRoot = findProjectRoot();
-  debug("Project root:", projectRoot);
-  
-  // Try environment variable first (for testing)
-  if (process.env.HANNAH_RUNTIME_PATH) {
-    try {
-      debug("Loading from env HANNAH_RUNTIME_PATH:", process.env.HANNAH_RUNTIME_PATH);
-      return await import(pathToFileURL(process.env.HANNAH_RUNTIME_PATH).href);
-    } catch (err) {
-      debug("Failed to load from env:", err.message);
-    }
-  }
-  
-  // Try local project install first
-  try {
-    const localPath = path.join(projectRoot, "node_modules", "hannah-agent-runtime", "dist", "index.js");
-    if (fs.existsSync(localPath)) {
-      debug("Loading from local install:", localPath);
-      return await import(pathToFileURL(localPath).href);
-    }
-  } catch (err) {
-    debug("Failed to load local:", err.message);
-  }
-  
-  // Try global install
-  try {
-    debug("Loading from global install");
-    return await import("hannah-agent-runtime");
-  } catch (err) {
-    debug("Failed to load global:", err.message);
-  }
-  
-  console.error("hannah-agent-runtime not found. Install it: npm install -D hannah-agent-runtime");
-  process.exit(1);
-}
+const PROJECT_ROOT = findProjectRoot();
+const HARNESS_DIR = path.join(PROJECT_ROOT, ".harness");
+const POLICIES_DIR = path.join(HARNESS_DIR, "policies");
+const SEMANTIC_RULES_DIR = path.join(HARNESS_DIR, "semantic-rules");
+const TRACE_DIR = path.join(HARNESS_DIR, "traces");
 
-// ─── Load Config & Policies ─────────────────────────────────────────
+// ─── Simple YAML Parser ─────────────────────────────────────────────
+// Handles the subset of YAML used in policy files.
+// No external dependencies needed.
 
-async function loadConfig() {
-  const projectRoot = findProjectRoot();
-  const harnessDir = path.join(projectRoot, ".harness");
-  const configPath = path.join(harnessDir, "config.yaml");
-  
-  let config = {
-    trace: { enabled: true, dir: ".harness/traces" },
-    policies: ["policies"],
-  };
-  
-  try {
-    // Try to load js-yaml for config parsing
-    let yaml;
-    try {
-      yaml = await import("js-yaml");
-    } catch {
-      // js-yaml not available, use default config
-      return config;
+function parseSimpleYAML(text) {
+  const lines = text.split("\n");
+  const root = {};
+  const stack = [{ indent: -1, obj: root }];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+
+    const indent = line.search(/\S/);
+    const trimmed = line.trim();
+
+    // Pop stack to find parent
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
     }
-    
-    if (fs.existsSync(configPath)) {
-      debug("Loading config from:", configPath);
-      const yamlContent = fs.readFileSync(configPath, "utf-8");
-      config = yaml.load(yamlContent);
-    }
-  } catch (err) {
-    debug("Failed to load config:", err.message);
-  }
-  
-  return config;
-}
+    const parent = stack[stack.length - 1].obj;
 
-// ─── Main Setup ─────────────────────────────────────────────────────
-
-async function setup() {
-  log("Initializing hannah-agent-runtime...");
-  
-  const runtime = await loadRuntime();
-  const config = await loadConfig();
-  
-  const projectRoot = findProjectRoot();
-  const harnessDir = path.join(projectRoot, ".harness");
-  
-  // Setup Runtime
-  const agentRuntime = new runtime.AgentRuntime({ debug: DEBUG });
-  
-  // Load policies from .harness/policies/
-  const policiesDir = path.join(harnessDir, "policies");
-  if (fs.existsSync(policiesDir)) {
-    try {
-      if (typeof runtime.loadPoliciesFromDir === "function") {
-        const policies = runtime.loadPoliciesFromDir(policiesDir);
-        policies.forEach((p) => agentRuntime.loadPolicy(p));
-        debug("Loaded", policies.length, "policies from", policiesDir);
+    // Array item
+    if (trimmed.startsWith("- ")) {
+      const value = trimmed.slice(2).trim();
+      // Find the key this array belongs to
+      let target = parent;
+      if (Array.isArray(parent)) {
+        // We're inside an array, check if this is a nested object
+        if (value.includes(":")) {
+          const obj = {};
+          const [k, ...rest] = value.split(":");
+          const v = rest.join(":").trim();
+          obj[k.trim()] = parseValue(v);
+          parent.push(obj);
+          stack.push({ indent, obj: obj });
+        } else {
+          parent.push(parseValue(value));
+        }
+      } else {
+        // Find the last key that was set and convert to array
+        const keys = Object.keys(parent);
+        const lastKey = keys[keys.length - 1];
+        if (lastKey && !Array.isArray(parent[lastKey])) {
+          // Check if the previous line was the key definition
+          const prevLine = lines[i - 1]?.trim() || "";
+          if (prevLine === lastKey + ":" || prevLine.startsWith(lastKey + ":")) {
+            parent[lastKey] = [];
+          }
+        }
+        if (Array.isArray(parent[lastKey])) {
+          if (value.includes(":")) {
+            const obj = {};
+            const [k, ...rest] = value.split(":");
+            const v = rest.join(":").trim();
+            obj[k.trim()] = parseValue(v);
+            parent[lastKey].push(obj);
+            stack.push({ indent, obj: obj });
+          } else {
+            parent[lastKey].push(parseValue(value));
+          }
+        }
       }
-    } catch (err) {
-      debug("Failed to load policies from dir:", err.message);
-      // Fallback: load built-in policies
-      if (runtime.allPolicies) {
-        runtime.allPolicies.forEach((p) => agentRuntime.loadPolicy(p));
-        debug("Loaded built-in policies");
+      continue;
+    }
+
+    // Key: value
+    if (trimmed.includes(":")) {
+      const colonIdx = trimmed.indexOf(":");
+      const key = trimmed.slice(0, colonIdx).trim();
+      const rawValue = trimmed.slice(colonIdx + 1).trim();
+
+      if (rawValue === "") {
+        // Could be an object or array — look ahead
+        const nextLine = lines[i + 1]?.trim() || "";
+        if (nextLine.startsWith("- ")) {
+          parent[key] = [];
+        } else {
+          parent[key] = {};
+        }
+        stack.push({ indent, obj: parent[key] });
+      } else {
+        parent[key] = parseValue(rawValue);
       }
     }
   }
-  
-  // Create adapter based on config
-  const adapterName = config?.adapters?.[0] || "claude-code";
-  const adapterMap = {
-    "claude-code": runtime.ClaudeCodeAdapter,
-    "qoder": runtime.QoderAdapter,
-    "codex": runtime.CodexAdapter,
-    "copilot": runtime.CopilotAdapter,
-    "trae": runtime.TraeAdapter,
-  };
-  
-  const AdapterClass = adapterMap[adapterName];
-  if (!AdapterClass) {
-    console.error("Unknown adapter: " + adapterName);
-    process.exit(1);
-  }
-  
-  const adapter = new AdapterClass();
-  adapter.attachRuntime(agentRuntime);
-  debug("Using adapter:", adapterName);
-  
-  // Start the runtime to register the policy engine hook
-  await agentRuntime.start();
-  debug("Runtime started with policy engine");
-  
-  // ─── Load Semantic Hook Engine ──────────────────────────────────────
-  let semanticEngine = null;
-  try {
-    if (typeof runtime.createSemanticEngine === "function") {
-      semanticEngine = await runtime.createSemanticEngine(projectRoot);
-      const hooks = semanticEngine.getHooks();
-      log("Loaded semantic hook engine with", hooks.length, "hooks");
-      debug("Semantic hooks:", hooks.map(h => h.name).join(", "));
-    }
-  } catch (err) {
-    debug("Failed to load semantic hook engine:", err.message);
-  }
-  
-  // Trace Writer
-  const traceEnabled = config?.trace?.enabled !== false;
-  const traceDir = path.join(projectRoot, config?.trace?.dir || ".harness/traces");
-  
-  function writeTrace(event, result) {
-    if (!traceEnabled) return;
-    try {
-      fs.mkdirSync(traceDir, { recursive: true });
-      const date = new Date().toISOString().slice(0, 10);
-      const traceFile = path.join(traceDir, date + ".jsonl");
-      const entry = {
-        timestamp: new Date().toISOString(),
-        event: event.name,
-        source: event.source,
-        action: result?.finalAction || "unknown",
-        payload: event.payload,
-        feedback: result?.feedbackMessages || [],
-      };
-      fs.appendFileSync(traceFile, JSON.stringify(entry) + "\n");
-      debug("Trace written to:", traceFile);
-    } catch (err) {
-      debug("Failed to write trace:", err.message);
-    }
-  }
-  
-  log("Setup complete. Adapter:", adapterName);
-  return { runtime, adapter, adapterName, writeTrace, traceEnabled, semanticEngine, projectRoot };
+
+  return root;
 }
 
-// ─── Hook Processing ────────────────────────────────────────────────
+function parseValue(str) {
+  if (!str) return "";
+  // Remove quotes
+  if ((str.startsWith('"') && str.endsWith('"')) ||
+      (str.startsWith("'") && str.endsWith("'"))) {
+    return str.slice(1, -1);
+  }
+  if (str === "true") return true;
+  if (str === "false") return false;
+  if (str === "null") return null;
+  if (/^-?\d+$/.test(str)) return parseInt(str, 10);
+  if (/^-?\d+\.\d+$/.test(str)) return parseFloat(str);
+  // Inline array [a, b, c]
+  if (str.startsWith("[") && str.endsWith("]")) {
+    return str.slice(1, -1).split(",").map(s => parseValue(s.trim()));
+  }
+  return str;
+}
 
-async function readStdin() {
+// ─── Policy Engine ──────────────────────────────────────────────────
+
+function globMatch(pattern, value) {
+  if (typeof value !== "string") return false;
+  // Convert glob pattern to regex
+  let regexStr = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === "*") {
+      if (pattern[i + 1] === "*") {
+        // ** matches zero or more path segments
+        if (pattern[i + 2] === "/") {
+          regexStr += "(.*/)?"; // **/ matches optional path prefix
+          i += 2;
+        } else {
+          regexStr += ".*"; // ** at end matches everything
+          i++;
+        }
+      } else {
+        regexStr += "[^/]*"; // * matches everything except /
+      }
+    } else if (c === "?") {
+      regexStr += ".";
+    } else if (c === "." || c === "+" || c === "^" || c === "$" || 
+               c === "{" || c === "}" || c === "(" || c === ")" || 
+               c === "|" || c === "[" || c === "]") {
+      regexStr += String.fromCharCode(92) + c; // backslash + char
+    } else {
+      regexStr += c;
+    }
+  }
+  return new RegExp("^" + regexStr + "$", "i").test(value);
+}
+
+function getFieldValue(obj, field) {
+  const parts = field.split(".");
+  let current = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function matchesPattern(value, pattern) {
+  if (value === undefined || value === null) return false;
+  const strValue = String(value);
+  const patterns = Array.isArray(pattern) ? pattern : [pattern];
+  return patterns.some(p => globMatch(p, strValue));
+}
+
+function evaluateRule(rule, eventName, eventPayload) {
+  // Check event match
+  const events = Array.isArray(rule.when) ? rule.when : [rule.when];
+  const eventMatches = events.some(e => {
+    if (e === "*") return true;
+    if (e === eventName) return true;
+    if (e.endsWith(".*")) {
+      return eventName.startsWith(e.slice(0, -2) + ".");
+    }
+    return globMatch(e, eventName);
+  });
+
+  if (!eventMatches) return null;
+
+  // Check conditions
+  if (rule.match && Array.isArray(rule.match)) {
+    const allMatch = rule.match.every(condition => {
+      const value = getFieldValue(eventPayload, condition.field) ??
+                    getFieldValue({ name: eventName }, condition.field);
+      const matched = matchesPattern(value, condition.pattern);
+      return condition.negate ? !matched : matched;
+    });
+    if (!allMatch) return null;
+  }
+
+  return rule;
+}
+
+function evaluatePolicies(policies, eventName, eventPayload) {
+  for (const policy of policies) {
+    if (policy.enabled === false) continue;
+    if (!policy.rules || !Array.isArray(policy.rules)) continue;
+
+    for (const rule of policy.rules) {
+      const matched = evaluateRule(rule, eventName, eventPayload);
+      if (matched) {
+        return {
+          action: matched.action,
+          reason: matched.reason || matched.feedback || `Blocked by policy: ${policy.name}`,
+          feedback: matched.feedback || matched.reason || "",
+          suggestions: matched.suggestions || [],
+          modifiedInput: matched.modifiedInput || null,
+          policy: policy.name,
+          rule: matched.name || "unnamed",
+        };
+      }
+    }
+  }
+  return { action: "allow" };
+}
+
+// ─── Load Policies ──────────────────────────────────────────────────
+
+function loadPolicies() {
+  const policies = [];
+  if (!fs.existsSync(POLICIES_DIR)) {
+    debug("No policies directory:", POLICIES_DIR);
+    return policies;
+  }
+
+  const files = fs.readdirSync(POLICIES_DIR).filter(
+    f => f.endsWith(".yaml") || f.endsWith(".yml")
+  );
+
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(path.join(POLICIES_DIR, file), "utf-8");
+      const policy = parseSimpleYAML(content);
+      if (policy.name) {
+        policies.push(policy);
+        debug("Loaded policy:", policy.name, "with", (policy.rules || []).length, "rules");
+      }
+    } catch (err) {
+      debug("Failed to load policy", file + ":", err.message);
+    }
+  }
+
+  return policies;
+}
+
+// ─── Tool Classifier ────────────────────────────────────────────────
+
+const FILE_MODIFY_TOOLS = new Set([
+  "Write", "Edit", "MultiEdit", "write_file", "edit_file", "create_file",
+  "SearchReplace", "write", "edit",
+]);
+
+function isFileModifyTool(toolName) {
+  return FILE_MODIFY_TOOLS.has(toolName);
+}
+
+function isMCPTool(toolName) {
+  return toolName.startsWith("mcp__") || toolName.startsWith("mcp_");
+}
+
+function extractFilePath(toolInput) {
+  return toolInput?.file_path || toolInput?.path || toolInput?.filePath;
+}
+
+function parseMCPToolName(toolName) {
+  let parts = toolName.split("__");
+  if (parts.length >= 3) return { server: parts[1], operation: parts.slice(2).join("__") };
+  parts = toolName.split("_");
+  if (parts.length >= 3 && parts[0] === "mcp") return { server: parts[1], operation: parts.slice(2).join("_") };
+  return null;
+}
+
+// ─── Event Builder ──────────────────────────────────────────────────
+
+function buildEvents(input, phase) {
+  const events = [];
+  const toolName = input.tool_name || "unknown";
+  const toolInput = input.tool_input || {};
+  const now = new Date().toISOString();
+
+  if (phase === "before") {
+    // Always emit tool.before
+    events.push({
+      name: "tool.before",
+      payload: { toolName, input: toolInput },
+    });
+
+    // File modification
+    if (isFileModifyTool(toolName)) {
+      const filePath = extractFilePath(toolInput);
+      if (filePath) {
+        events.push({
+          name: "code.before_modify",
+          payload: { filePath, operation: "write" },
+        });
+      }
+    }
+
+    // MCP
+    if (isMCPTool(toolName)) {
+      const mcpInfo = parseMCPToolName(toolName);
+      if (mcpInfo) {
+        events.push({
+          name: "mcp.before",
+          payload: { server: mcpInfo.server, operation: mcpInfo.operation, params: toolInput },
+        });
+      }
+    }
+  } else {
+    // after
+    events.push({
+      name: "tool.after",
+      payload: { toolName, input: toolInput, output: input.tool_output },
+    });
+
+    if (isFileModifyTool(toolName)) {
+      const filePath = extractFilePath(toolInput);
+      if (filePath) {
+        events.push({
+          name: "code.after_modify",
+          payload: { filePath, operation: "write", success: true },
+        });
+      }
+    }
+
+    if (isMCPTool(toolName)) {
+      const mcpInfo = parseMCPToolName(toolName);
+      if (mcpInfo) {
+        events.push({
+          name: "mcp.after",
+          payload: { server: mcpInfo.server, operation: mcpInfo.operation, result: input.tool_output },
+        });
+      }
+    }
+  }
+
+  return events;
+}
+
+// ─── Trace Writer ───────────────────────────────────────────────────
+
+function writeTrace(eventName, payload, action, feedback) {
+  try {
+    fs.mkdirSync(TRACE_DIR, { recursive: true });
+    // Use local time for date filename (not UTC)
+    const now = new Date();
+    const date = now.getFullYear() + "-" +
+      String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0");
+    const traceFile = path.join(TRACE_DIR, date + ".jsonl");
+    const entry = {
+      timestamp: now.toISOString(),
+      event: eventName,
+      source: "hannah",
+      action: action,
+      payload: payload,
+      feedback: feedback ? [feedback] : [],
+    };
+    fs.appendFileSync(traceFile, JSON.stringify(entry) + "\n");
+    debug("Trace written:", eventName, action);
+  } catch (err) {
+    debug("Failed to write trace:", err.message);
+  }
+}
+
+// ─── Semantic Rule Engine (built-in) ────────────────────────────────
+// Zero-dependency semantic rule matching across all dimensions.
+
+const BUILT_IN_RULES = [
+  // ── Redline: agent instruction files ──
+  { name: "redline-agent-files", action: "deny",
+    feedback: "You cannot modify agent instruction files. These define your behavior and must only be changed by the human user.",
+    suggestions: ["Continue without modifying instruction files"],
+    match: { file_path: ["**/agent.md", "**/AGENT.md", "**/.agent.md", "**/agents.md", "**/AGENTS.md", "**/CLAUDE.md", "**/COPILOT.md", "**/.cursorrules", "**/.cursor/rules.md"] } },
+  // ── Redline: harness config ──
+  { name: "redline-harness-config", action: "deny",
+    feedback: "You cannot modify .harness/ configuration. This directory contains runtime guard policies and hooks.",
+    suggestions: ["Continue without modifying .harness/ files"],
+    match: { file_path: ["**/.harness/**"] } },
+  // ── Environment files ──
+  { name: "env-protection", action: "deny",
+    feedback: "Environment files are protected. They may contain secrets and must be edited manually.",
+    suggestions: ["Ask the human user to edit .env files"],
+    match: { file_path: ["**/.env", "**/.env.*", "**/*.env"] } },
+  // ── Lock files ──
+  { name: "lock-file-protection", action: "deny",
+    feedback: "Lock files are auto-generated. Use the package manager instead of editing directly.",
+    suggestions: ["Use npm install, pnpm add, yarn add, etc."],
+    match: { file_path: ["**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock", "**/poetry.lock", "**/Gemfile.lock", "**/Cargo.lock", "**/go.sum"] } },
+  // ── Production config ──
+  { name: "production-config", action: "deny",
+    feedback: "Production configuration must be changed through the deployment pipeline, not directly.",
+    suggestions: ["Modify staging/dev configuration first", "Use CI/CD pipeline for production deployment"],
+    match: { file_path: ["**/production.yaml", "**/production.yml", "**/production.json", "**/production.env", "**/prod.yaml", "**/prod.yml", "**/prod.json", "**/prod.env", "**/production/**", "**/prod/**"] } },
+  // ── Dangerous shell ──
+  { name: "dangerous-rm", action: "modify",
+    feedback: "Destructive rm commands are blocked.",
+    modifiedInput: { command: "echo 'Blocked: dangerous rm command'" },
+    suggestions: ["Use specific file paths instead of wildcards", "Use rm -i for interactive deletion"],
+    match: { command: ["rm -rf /", "rm -rf ~", "rm -rf .", "rm -rf *"] } },
+  { name: "dangerous-git-force", action: "modify",
+    feedback: "Force push is not allowed. Use regular push or push with lease.",
+    modifiedInput: { command: "git push --force-with-lease" },
+    suggestions: ["Use git push --force-with-lease instead"],
+    match: { command: ["git push --force", "git push -f"] } },
+  // ── Dangerous DB ──
+  { name: "dangerous-db-drop", action: "modify",
+    feedback: "Destructive database operations (DROP/TRUNCATE) are blocked.",
+    modifiedInput: { content: "-- Blocked: Use ALTER TABLE or conditional DELETE instead" },
+    suggestions: ["Use ALTER TABLE instead", "Add conditional checks before DELETE"],
+    match: { content: ["DROP TABLE", "DROP DATABASE", "TRUNCATE TABLE"] } },
+  // ── Secrets ──
+  { name: "secret-password", action: "deny",
+    feedback: "Hardcoded passwords detected. Use environment variables or a secrets manager.",
+    suggestions: ["Use process.env.PASSWORD", "Use a secrets manager (Vault, AWS Secrets Manager)"],
+    match: { content: ["password = \"", "password = '", "passwd = \"", "passwd = '", "pwd = \"", "pwd = '"] } },
+  { name: "secret-api-key", action: "deny",
+    feedback: "Hardcoded API keys detected. Use environment variables or a secrets manager.",
+    suggestions: ["Use process.env.API_KEY", "Use a secrets manager"],
+    match: { content: ["api_key = \"", "api_key = '", "apiKey = \"", "apiKey = '", "API_KEY = \"", "API_KEY = '"] } },
+  { name: "secret-private-key", action: "deny",
+    feedback: "Private keys must not be embedded in source code.",
+    suggestions: ["Use a secrets manager or SSH agent"],
+    match: { content: ["-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----", "-----BEGIN OPENSSH PRIVATE KEY-----"] } },
+  // ── MCP safety ──
+  { name: "mcp-db-write", action: "deny",
+    feedback: "Direct database write via MCP is not allowed. Use the application API layer.",
+    suggestions: ["Use the application API instead of direct database access"],
+    match: { mcp_server: ["database", "db", "sql", "postgres", "mysql", "mongodb"], mcp_operation: ["write", "delete", "drop", "truncate", "alter", "update", "insert", "execute"] } },
+  // ── Frontend security (warn) ──
+  { name: "react-xss", action: "warn",
+    feedback: "dangerouslySetInnerHTML can lead to XSS. Ensure content is sanitized.",
+    suggestions: ["Use DOMPurify to sanitize HTML", "Use textContent instead when possible"],
+    match: { file_type: ["tsx", "jsx", "ts", "js"], content: ["dangerouslySetInnerHTML"] } },
+  { name: "vue-xss", action: "warn",
+    feedback: "v-html can lead to XSS. Use text interpolation when possible.",
+    suggestions: ["Use {{ }} interpolation instead of v-html"],
+    match: { file_type: ["vue"], content: ["v-html"] } },
+  { name: "eval-injection", action: "warn",
+    feedback: "eval() can lead to code injection. Consider safer alternatives.",
+    suggestions: ["Use JSON.parse() for JSON data", "Use Function constructors carefully", "Avoid eval when possible"],
+    match: { file_type: ["ts", "js", "tsx", "jsx", "py", "rb"], content: ["eval(", "new Function("] } },
+  // ── Core module protection ──
+  { name: "core-module", action: "warn",
+    feedback: "You are modifying core module files. These changes require human review.",
+    suggestions: ["Ensure changes are reviewed by a human", "Document the changes thoroughly"],
+    match: { file_path: ["**/src/core/**", "**/src/kernel/**", "**/src/runtime/**"] } },
+];
+
+/**
+ * Extract match dimensions from handler input
+ */
+// ─── Load Semantic Rules from YAML ──────────────────────────────────
+// Reads .harness/semantic-rules/*.yaml and converts them into
+// the same shape as BUILT_IN_RULES so evaluateSemanticRules()
+// can check them all uniformly.
+
+function loadSemanticRulesYAML() {
+  const rules = [];
+  let dir;
+  try {
+    dir = fs.readdirSync(SEMANTIC_RULES_DIR);
+  } catch {
+    return rules;
+  }
+  const files = dir.filter(
+    (f) => f.endsWith(".yaml") || f.endsWith(".yml")
+  );
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(
+        path.join(SEMANTIC_RULES_DIR, file),
+        "utf-8"
+      );
+      const parsed = parseSimpleYAML(content);
+      const ruleList = parsed.rules;
+      if (!Array.isArray(ruleList)) continue;
+      for (const r of ruleList) {
+        if (!r || typeof r !== "object") continue;
+        const match = {};
+        if (r.match && typeof r.match === "object") {
+          for (const [dim, val] of Object.entries(r.match)) {
+            match[dim] = Array.isArray(val)
+              ? val.map(String)
+              : [String(val)];
+          }
+        }
+        rules.push({
+          name: r.name || "unnamed-semantic-rule",
+          feedback: r.feedback || r.description || "",
+          action: r.action || "warn",
+          suggestions: Array.isArray(r.suggestions)
+            ? r.suggestions.map(String)
+            : [],
+          match,
+        });
+      }
+    } catch (err) {
+      debug("Failed to load semantic rule " + file + ":", err.message);
+    }
+  }
+  return rules;
+}
+
+function extractDims(input) {
+  const toolName = input.tool_name || "";
+  const toolInput = input.tool_input || {};
+  const filePath = toolInput.file_path || toolInput.path || toolInput.filePath || "";
+  const content = toolInput.content || "";
+  const command = toolInput.command || "";
+  const fileType = filePath.includes(".") ? filePath.split(".").pop() : "";
+
+  let mcpServer = "", mcpOp = "";
+  if (toolName.startsWith("mcp__")) {
+    const parts = toolName.split("__");
+    if (parts.length >= 3) { mcpServer = parts[1]; mcpOp = parts.slice(2).join("__"); }
+  } else if (toolName.startsWith("mcp_")) {
+    const parts = toolName.split("_");
+    if (parts.length >= 3) { mcpServer = parts[1]; mcpOp = parts.slice(2).join("_"); }
+  }
+
+  return { tool_name: toolName, file_path: filePath, content, command, mcp_server: mcpServer, mcp_operation: mcpOp, file_type: fileType };
+}
+
+/**
+ * Glob-to-regex (simplified)
+ */
+function globRe(glob) {
+  let r = "";
+  const special = [".", "+", "^", "$", "{", "}", "(", ")", "|", "[", "]"];
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i+1] === "*") { r += (glob[i+2] === "/" ? "(.*/)?" : ".*"); i += (glob[i+2] === "/" ? 2 : 1); }
+      else { r += "[^/]*"; }
+    } else if (c === "?") { r += "."; }
+    else if (special.indexOf(c) >= 0) { r += String.fromCharCode(92) + c; }
+    else { r += c; }
+  }
+  return new RegExp(r, "i");
+}
+
+/**
+ * Match one dimension
+ */
+function matchDim(patterns, value) {
+  if (!value) return false;
+  return patterns.some(p => {
+    if (p.includes("*") || p.includes("?")) return globRe(p).test(value);
+    return value.toLowerCase().includes(p.toLowerCase());
+  });
+}
+
+/**
+ * Evaluate all rules (built-in + YAML) against input dimensions
+ */
+function evaluateSemanticRules(input) {
+  const dims = extractDims(input);
+  const priority = { deny: 0, modify: 1, warn: 2 };
+  let best = null;
+  let bestP = Infinity;
+
+  // Merge built-in rules with user-defined rules from semantic-rules/*.yaml
+  const allRules = BUILT_IN_RULES.concat(loadSemanticRulesYAML());
+  log("Semantic rules:", allRules.length, "total (" + BUILT_IN_RULES.length + " built-in + " + (allRules.length - BUILT_IN_RULES.length) + " YAML)");
+
+  for (const rule of allRules) {
+    const m = rule.match;
+    let matched = 0, total = 0;
+
+    if (m.tool_name)    { total++; if (matchDim(m.tool_name, dims.tool_name)) matched++; }
+    if (m.file_path)    { total++; if (matchDim(m.file_path, dims.file_path)) matched++; }
+    if (m.content)      { total++; if (matchDim(m.content, dims.content)) matched++; }
+    if (m.command)      { total++; if (matchDim(m.command, dims.command)) matched++; }
+    if (m.mcp_server)   { total++; if (matchDim(m.mcp_server, dims.mcp_server)) matched++; }
+    if (m.mcp_operation){ total++; if (matchDim(m.mcp_operation, dims.mcp_operation)) matched++; }
+    if (m.file_type)    { total++; if (matchDim(m.file_type, dims.file_type)) matched++; }
+
+    if (total > 0 && matched === total) {
+      const p = priority[rule.action] ?? 3;
+      if (p < bestP) {
+        best = rule;
+        bestP = p;
+      }
+    }
+  }
+
+  return best;
+}
+
+// ─── stdin Reader ───────────────────────────────────────────────────
+
+function readStdin() {
   return new Promise((resolve, reject) => {
     const chunks = [];
     const timer = setTimeout(() => {
       if (chunks.length === 0) {
         reject(new Error("stdin timeout"));
       } else {
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
-        } catch (e) {
-          reject(e);
-        }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8"))); }
+        catch (e) { reject(e); }
       }
     }, 1000);
-    
+
     process.stdin.on("data", (c) => chunks.push(c));
     process.stdin.on("end", () => {
       clearTimeout(timer);
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
-      } catch (e) {
-        reject(e);
-      }
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8"))); }
+      catch (e) { reject(e); }
     });
-    process.stdin.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
+    process.stdin.on("error", (e) => { clearTimeout(timer); reject(e); });
   });
 }
+
+// ─── Main ───────────────────────────────────────────────────────────
 
 async function main() {
   const mode = process.argv[2];
@@ -268,160 +675,131 @@ async function main() {
     console.error("Usage: handler.mjs <pre-tool-use|post-tool-use|stop>");
     process.exit(1);
   }
-  
+
   log("Hook triggered:", mode);
-  
-  // Setup runtime and adapter
-  const { adapter, adapterName, writeTrace, traceEnabled, semanticEngine, projectRoot } = await setup();
-  
+  log("PID:", process.pid.toString());
+  log("CWD:", process.cwd());
+  log("Args:", process.argv.join(" "));
+
+  // Load policies
+  const policies = loadPolicies();
+  log("Loaded", policies.length, "policies");
+
+  // Read stdin
   let input;
   try {
     input = await readStdin();
-    debug("Received input:", JSON.stringify(input, null, 2));
+    debug("Input:", JSON.stringify(input, null, 2));
   } catch (err) {
-    debug("Failed to read stdin:", err.message);
-    // No stdin or parse error — allow by default
-    log("No input received, allowing by default");
+    debug("No stdin:", err.message);
     process.exit(0);
   }
-  
-  // ─── Execute Semantic Hooks First (CRITICAL) ────────────────────────
-  if (semanticEngine && mode === "pre-tool-use") {
-    try {
-      // Build semantic context
-      const filePath = input.tool_input?.file_path || input.tool_input?.path || "";
-      const content = input.tool_input?.content || "";
-      
-      const semanticContext = {
-        event: {
-          name: "tool.before",
-          payload: {
-            toolName: input.tool_name,
-            input: input.tool_input,
-          },
-        },
-        code: filePath ? {
-          filePath,
-          fileType: path.extname(filePath).slice(1),
-          content,
-        } : undefined,
-        project: {
-          root: projectRoot,
-          name: path.basename(projectRoot),
-          techStack: [],
-        },
-      };
-      
-      debug("Executing semantic hooks...");
-      const semanticDecisions = await semanticEngine.evaluate(semanticContext);
-      
-      if (semanticDecisions.length > 0) {
-        // Find the most restrictive decision
-        const priority = { deny: 0, modify: 1, warn: 2, allow: 3 };
-        const mostRestrictive = semanticDecisions.reduce((most, current) => {
-          return priority[current.action] < priority[most.action] ? current : most;
-        });
-        
-        log("Semantic hook decision:", mostRestrictive.action, "-", mostRestrictive.reason);
-        
-        // If denied by semantic hook, return immediately
-        if (mostRestrictive.action === "deny") {
-          const output = {
-            decision: "deny",
-            reason: mostRestrictive.reason,
-            feedback: mostRestrictive.feedback,
-          };
-          
-          // Write trace
-          if (traceEnabled) {
-            writeTrace(
-              {
-                name: "tool.before",
-                source: adapterName,
-                payload: { toolName: input.tool_name, input: input.tool_input },
-              },
-              { finalAction: "deny", feedbackMessages: [mostRestrictive.reason] }
-            );
-          }
-          
-          process.stdout.write(JSON.stringify(output));
-          process.exit(2);
-        }
-        
-        // If warn, log it but continue
-        if (mostRestrictive.action === "warn") {
-          log("Semantic hook warning:", mostRestrictive.feedback);
-        }
-      }
-    } catch (err) {
-      debug("Semantic hook execution failed:", err.message);
-      // Continue with traditional policy even if semantic hooks fail
+
+  const toolName = input.tool_name || "unknown";
+  const phase = mode === "pre-tool-use" ? "before" : "after";
+  const events = buildEvents(input, phase);
+
+  // Evaluate all events through policies
+  let finalDecision = "allow";
+  let finalReason = "";
+  let finalFeedback = "";
+  let finalSuggestions = [];
+  let finalModifiedInput = null;
+
+  for (const event of events) {
+    const result = evaluatePolicies(policies, event.name, event.payload);
+
+    if (result.action === "deny") {
+      finalDecision = "deny";
+      finalReason = result.reason || result.feedback;
+      finalFeedback = result.feedback || result.reason;
+      if (result.suggestions) finalSuggestions = result.suggestions;
+      log("DENY:", event.name, "-", finalReason);
+      writeTrace(event.name, event.payload, "deny", finalFeedback);
+      break; // Most restrictive wins, stop evaluating
+    } else if (result.action === "modify") {
+      finalDecision = "allow"; // modify means "allow with modified input"
+      finalReason = result.reason || result.feedback;
+      finalFeedback = result.feedback || result.reason;
+      finalModifiedInput = result.modifiedInput || null;
+      if (result.suggestions) finalSuggestions = result.suggestions;
+      log("MODIFY:", event.name, "-", finalReason);
+      writeTrace(event.name, event.payload, "modify", finalFeedback);
+    } else if (result.action === "warn" && finalDecision !== "deny") {
+      finalDecision = "warn";
+      finalReason = result.reason || result.feedback;
+      finalFeedback = result.feedback || result.reason;
+      if (result.suggestions) finalSuggestions = result.suggestions;
+      log("WARN:", event.name, "-", finalReason);
+    }
+
+    // Write trace for allowed events too
+    if (phase === "before") {
+      writeTrace(event.name, event.payload, "allow", "");
     }
   }
-  
-  // ─── Execute Traditional Policy ─────────────────────────────────────
-  // Process through adapter
-  let output;
-  switch (mode) {
-    case "pre-tool-use":
-      log("Processing pre-tool-use for tool:", input.tool_name);
-      output = await adapter.handlePreToolUse(input);
-      log("Decision:", output.decision, output.reason ? "- " + output.reason : "");
-      
-      // Write traces for all events
-      if (traceEnabled) {
-        writeTrace(
-          {
-            name: "tool.before",
-            source: adapterName,
-            payload: { toolName: input.tool_name, input: input.tool_input },
-          },
-          { finalAction: output.decision === "deny" ? "deny" : "allow", feedbackMessages: output.reason ? [output.reason] : [] }
-        );
+
+  // ── Semantic rule evaluation (if YAML policies didn't deny) ──
+  if (finalDecision !== "deny" && phase === "before") {
+    const semRule = evaluateSemanticRules(input);
+    if (semRule) {
+      log(semRule.action.toUpperCase() + ":", semRule.name, "-", semRule.feedback);
+      writeTrace("semantic." + semRule.name, { toolName, rule: semRule.name }, semRule.action, semRule.feedback);
+
+      if (semRule.action === "deny") {
+        finalDecision = "deny";
+        finalReason = semRule.feedback;
+        finalFeedback = semRule.feedback;
+        if (semRule.suggestions) finalSuggestions = semRule.suggestions;
+      } else if (semRule.action === "modify" && !finalModifiedInput) {
+        finalDecision = "allow"; // modify means "allow with modified input"
+        finalReason = semRule.feedback;
+        finalFeedback = semRule.feedback;
+        finalModifiedInput = semRule.modifiedInput || null;
+        if (semRule.suggestions) finalSuggestions = semRule.suggestions;
+      } else if (semRule.action === "warn" && finalDecision !== "deny") {
+        finalDecision = "warn";
+        finalReason = semRule.feedback;
+        finalFeedback = semRule.feedback;
+        if (semRule.suggestions && finalSuggestions.length === 0) {
+          finalSuggestions = semRule.suggestions;
+        }
       }
-      
-      // Output decision
-      process.stdout.write(JSON.stringify(output));
-      process.exit(output.decision === "deny" ? 2 : 0);
-      break;
-      
-    case "post-tool-use":
-      log("Processing post-tool-use for tool:", input.tool_name);
-      await adapter.handlePostToolUse(input);
-      log("Post-tool-use completed");
-      
-      if (traceEnabled) {
-        writeTrace(
-          {
-            name: "tool.after",
-            source: adapterName,
-            payload: { toolName: input.tool_name },
-          },
-          { finalAction: "allow", feedbackMessages: [] }
-        );
+    }
+  }
+
+  // Output decision
+  if (mode === "pre-tool-use" || mode === "stop") {
+    const output = { decision: finalDecision };
+    if (finalReason) output.reason = finalReason;
+    if (finalFeedback) output.stopReason = finalFeedback;
+
+    // Add updatedInput for modify actions (Claude Code / Qoder / Cursor support this)
+    if (finalModifiedInput) {
+      output.updatedInput = finalModifiedInput;
+      // Merge modified input with original input
+      if (input.tool_input) {
+        output.updatedInput = { ...input.tool_input, ...finalModifiedInput };
       }
-      process.exit(0);
-      break;
-      
-    case "stop":
-      log("Processing stop hook");
-      output = await adapter.handleStop(input);
-      log("Stop decision:", output.decision);
-      process.stdout.write(JSON.stringify(output));
-      process.exit(output.decision === "deny" ? 2 : 0);
-      break;
-      
-    default:
-      console.error("Unknown mode: " + mode);
-      process.exit(1);
+    }
+
+    // Add suggestions for the agent
+    if (finalSuggestions.length > 0) {
+      output.suggestions = finalSuggestions;
+    }
+
+    process.stdout.write(JSON.stringify(output));
+    process.exit(finalDecision === "deny" ? 2 : 0);
+  } else {
+    // post-tool-use: observation only
+    writeTrace("tool.after", { toolName }, "allow", "");
+    process.exit(0);
   }
 }
 
 main().catch((err) => {
   log("Error:", err.message);
-  if (DEBUG) {
-    log("Stack:", err.stack);
-  }
+  if (DEBUG) log("Stack:", err.stack);
   // On error, allow by default (don't block the agent)
   process.exit(0);
 });

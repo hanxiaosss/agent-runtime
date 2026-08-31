@@ -618,6 +618,7 @@ export function saveHooksToFile(hooks: SemanticHook[], outputPath: string): void
 export function generateSemanticRuleFromExtracted(rule: ExtractedRule): SemanticRule {
   const match: SemanticMatchDimensions = {};
   const pattern = rule.pattern.trim();
+  const fullText = (rule.description || '').toLowerCase();
 
   // Heuristic: which dimension does this pattern belong to?
   if (pattern.includes('/') || /\.\w{1,5}$/.test(pattern)) {
@@ -627,8 +628,16 @@ export function generateSemanticRuleFromExtracted(rule: ExtractedRule): Semantic
     // Back-ticked command
     match.command = [pattern.slice(1, -1)];
   } else {
-    // General content match
-    match.content = [pattern];
+    // Check if the rule text mentions a language/tech that maps to file types
+    const langFileTypes = detectForbiddenFileTypes(fullText);
+    if (langFileTypes.length > 0) {
+      match.file_type = langFileTypes;
+      // Also target write operations
+      match.tool_name = ['Write', 'Edit', 'MultiEdit'];
+    } else {
+      // General content match
+      match.content = [pattern];
+    }
   }
 
   return {
@@ -641,6 +650,76 @@ export function generateSemanticRuleFromExtracted(rule: ExtractedRule): Semantic
     feedback: rule.feedback,
     suggestions: generateSuggestions(rule),
   };
+}
+
+/**
+ * Detect which file types are being *forbidden* by a rule.
+ *
+ * Heuristics (in priority order):
+ *   1. If the text splits on a separator (—, -, :) and the second part
+ *      says "only X" / "仅 X", the FIRST part's languages are forbidden.
+ *      e.g. "TypeScript — 仅纯 JavaScript 文件用" → forbid TypeScript
+ *   2. If text contains "only X" / "仅 X" / "只用 X", exclude X's
+ *      file types from all mentioned languages.
+ *   3. Otherwise, all mentioned languages are considered forbidden.
+ */
+function detectForbiddenFileTypes(text: string): string[] {
+  const langMap: Record<string, string[]> = {
+    'typescript': ['ts', 'tsx'],
+    'javascript': ['js', 'jsx', 'mjs', 'cjs'],
+    'python': ['py'],
+    'ruby': ['rb'],
+    'rust': ['rs'],
+    'golang': ['go'],
+    'java': ['java'],
+    'kotlin': ['kt', 'kts'],
+    'swift': ['swift'],
+    'c++': ['cpp', 'cc', 'cxx', 'hpp'],
+    'c#': ['cs'],
+    'vue': ['vue'],
+    'svelte': ['svelte'],
+    'php': ['php'],
+    'scala': ['scala'],
+    'dart': ['dart'],
+  };
+
+  const allLangTypes = (langs: string): string[] => {
+    const found = new Set<string>();
+    for (const [lang, exts] of Object.entries(langMap)) {
+      // Use word boundary to avoid substring matches
+      // e.g. "java" must not match inside "javascript"
+      // Escape special regex chars in lang (e.g. "c++", "c#")
+      const escaped = lang.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:^|[^a-z])${escaped}(?:[^a-z]|$)`);
+      if (re.test(langs)) {
+        for (const ext of exts) found.add(ext);
+      }
+    }
+    return [...found];
+  };
+
+  // 1. Check for separator pattern: "X — only Y" or "X - 仅 Y"
+  const separatorMatch = text.match(/^(.+?)\s*(?:—|–|-{2,}|[:：])\s*(.+)$/);
+  if (separatorMatch) {
+    const [, beforeSep, afterSep] = separatorMatch;
+    // If the "after" part contains an "only" indicator, the "before" part is forbidden
+    if (/(?:仅|只能|只用|only\s+use|use\s+only|only)/i.test(afterSep)) {
+      return allLangTypes(beforeSep);
+    }
+  }
+
+  // 2. Check for "only X" pattern — exclude X from forbidden set
+  const onlyMatch = text.match(/(?:仅|只能|只用|only\s+use|use\s+only|only)\s+(.+?)(?:\.|,|$)/i);
+  if (onlyMatch) {
+    const allowedText = onlyMatch[1];
+    const allTypes = allLangTypes(text);
+    const allowedTypes = new Set(allLangTypes(allowedText));
+    const forbidden = allTypes.filter(t => !allowedTypes.has(t));
+    return forbidden;
+  }
+
+  // 3. No "only" qualifier — all mentioned languages are forbidden
+  return allLangTypes(text);
 }
 
 /**

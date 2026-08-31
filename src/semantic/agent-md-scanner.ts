@@ -52,6 +52,19 @@ const RULE_PATTERNS = [
     category: 'architecture' as const,
     action: 'warn' as const,
   },
+  // Chinese restriction patterns (仅/只能/只用 — "only / solely")
+  // Capture the full context — text BEFORE the trigger word is included
+  // so that language/tech mentions are preserved for dimension detection.
+  {
+    pattern: /(.+?(?:仅|只能|只用).+?)(?:\.|$)/gim,
+    category: 'custom' as const,
+    action: 'deny' as const,
+  },
+  {
+    pattern: /(?:不得使用|禁止使用)\s*(.+?)(?:\.|$)/gim,
+    category: 'custom' as const,
+    action: 'deny' as const,
+  },
 ];
 
 /**
@@ -118,42 +131,57 @@ export function findAgentFiles(projectRoot: string): string[] {
 
 /**
  * Extract rules from agent.md content
+ *
+ * Two-pass extraction:
+ *   Pass 1 — RULE_PATTERNS regex: captures the text *after* a trigger
+ *            word ("Don't X" → captures "X").
+ *   Pass 2 — Bullet-point heuristic: captures the *full* text of any
+ *            list item that looks rule-like.
+ *
+ * To avoid duplicates, Pass 2 skips lines already matched by Pass 1.
  */
 export function extractRules(content: string, sourceFile: string): ExtractedRule[] {
   const rules: ExtractedRule[] = [];
   const lines = content.split('\n');
-  
+
+  // Track which lines already produced a rule via Pass 1,
+  // so Pass 2 (bullet-point) doesn't double-extract them.
+  const matchedLines = new Set<number>();
+
   // Track current section
   let currentSection = '';
-  
+
+  // ── Pass 1: regex patterns ───────────────────────────────────────
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    
+
     // Detect section headers
     if (line.startsWith('#')) {
       currentSection = line.replace(/^#+\s*/, '').trim().toLowerCase();
       continue;
     }
-    
+
     // Skip empty lines and comments
     if (!line.trim() || line.trim().startsWith('//') || line.trim().startsWith('<!--')) {
       continue;
     }
-    
+
     // Try to match rule patterns
     for (const { pattern, category, action } of RULE_PATTERNS) {
       pattern.lastIndex = 0; // Reset regex
       let match;
-      
+
       while ((match = pattern.exec(line)) !== null) {
         const ruleText = match[1].trim();
-        
+
         // Skip very short or generic matches
         if (ruleText.length < 5) continue;
-        
+
+        matchedLines.add(i);
+
         // Generate rule name from text
         const name = generateRuleName(ruleText);
-        
+
         // Determine if it's a file pattern, command pattern, or general rule
         const extractedRule = classifyRule(ruleText, {
           name,
@@ -167,20 +195,33 @@ export function extractRules(content: string, sourceFile: string): ExtractedRule
             line: i + 1,
           },
         });
-        
+
         rules.push(extractedRule);
       }
     }
-    
-    // Also check for bullet points with rules
+  }
+
+  // ── Pass 2: bullet points ────────────────────────────────────────
+  for (let i = 0; i < lines.length; i++) {
+    // Skip lines already handled by Pass 1
+    if (matchedLines.has(i)) continue;
+
+    const line = lines[i];
+
+    // Detect section headers (keep currentSection in sync)
+    if (line.startsWith('#')) {
+      currentSection = line.replace(/^#+\s*/, '').trim().toLowerCase();
+      continue;
+    }
+
     if (line.match(/^[\s]*[-*•]\s+/)) {
       const ruleText = line.replace(/^[\s]*[-*•]\s+/, '').trim();
-      
+
       if (isRuleLike(ruleText)) {
         const name = generateRuleName(ruleText);
         const category = categorizeRule(ruleText, currentSection);
         const action = determineAction(ruleText);
-        
+
         rules.push({
           name,
           description: ruleText,
@@ -196,7 +237,7 @@ export function extractRules(content: string, sourceFile: string): ExtractedRule
       }
     }
   }
-  
+
   // Remove duplicates
   return deduplicateRules(rules);
 }
@@ -213,6 +254,15 @@ function isRuleLike(text: string): boolean {
     /must/i,
     /should/i,
     /always/i,
+    /only use/i,
+    /use only/i,
+    /only allow/i,
+    /only for/i,
+    /仅/i,
+    /只能/i,
+    /只用/i,
+    /不得使用/i,
+    /禁止使用/i,
     /禁止/i,
     /不要/i,
     /必须/i,
@@ -221,7 +271,7 @@ function isRuleLike(text: string): boolean {
     /protect/i,
     /ensure/i,
   ];
-  
+
   return ruleIndicators.some(pattern => pattern.test(text));
 }
 
@@ -313,11 +363,11 @@ function categorizeRule(text: string, section: string): ExtractedRule['category'
  * Determine action based on rule text
  */
 function determineAction(text: string): ExtractedRule['action'] {
-  if (/don'?t|do not|never|禁止|不要|不允许|不能/.test(text)) {
+  if (/don'?t|do not|never|禁止|不要|不允许|不能|不得使用|禁止使用|只能|只用|仅/.test(text)) {
     return 'deny';
   }
-  if (/must|always|必须|应该/.test(text)) {
-    return 'warn';
+  if (/only for|only allow|only use|must|always|必须|应该/.test(text)) {
+    return 'deny'; // "only X" implies "not Y" — treat as deny
   }
   return 'warn';
 }

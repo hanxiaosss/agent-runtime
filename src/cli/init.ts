@@ -309,6 +309,7 @@ function findProjectRoot() {
 const PROJECT_ROOT = findProjectRoot();
 const HARNESS_DIR = path.join(PROJECT_ROOT, ".harness");
 const POLICIES_DIR = path.join(HARNESS_DIR, "policies");
+const SEMANTIC_RULES_DIR = path.join(HARNESS_DIR, "semantic-rules");
 const TRACE_DIR = path.join(HARNESS_DIR, "traces");
 
 // ─── Simple YAML Parser ─────────────────────────────────────────────
@@ -759,6 +760,58 @@ const BUILT_IN_RULES = [
 /**
  * Extract match dimensions from handler input
  */
+// ─── Load Semantic Rules from YAML ──────────────────────────────────
+// Reads .harness/semantic-rules/*.yaml and converts them into
+// the same shape as BUILT_IN_RULES so evaluateSemanticRules()
+// can check them all uniformly.
+
+function loadSemanticRulesYAML() {
+  const rules = [];
+  let dir;
+  try {
+    dir = fs.readdirSync(SEMANTIC_RULES_DIR);
+  } catch {
+    return rules;
+  }
+  const files = dir.filter(
+    (f) => f.endsWith(".yaml") || f.endsWith(".yml")
+  );
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(
+        path.join(SEMANTIC_RULES_DIR, file),
+        "utf-8"
+      );
+      const parsed = parseSimpleYAML(content);
+      const ruleList = parsed.rules;
+      if (!Array.isArray(ruleList)) continue;
+      for (const r of ruleList) {
+        if (!r || typeof r !== "object") continue;
+        const match = {};
+        if (r.match && typeof r.match === "object") {
+          for (const [dim, val] of Object.entries(r.match)) {
+            match[dim] = Array.isArray(val)
+              ? val.map(String)
+              : [String(val)];
+          }
+        }
+        rules.push({
+          name: r.name || "unnamed-semantic-rule",
+          feedback: r.feedback || r.description || "",
+          action: r.action || "warn",
+          suggestions: Array.isArray(r.suggestions)
+            ? r.suggestions.map(String)
+            : [],
+          match,
+        });
+      }
+    } catch (err) {
+      debug("Failed to load semantic rule " + file + ":", err.message);
+    }
+  }
+  return rules;
+}
+
 function extractDims(input) {
   const toolName = input.tool_name || "";
   const toolInput = input.tool_input || {};
@@ -809,7 +862,7 @@ function matchDim(patterns, value) {
 }
 
 /**
- * Evaluate all built-in rules against input dimensions
+ * Evaluate all rules (built-in + YAML) against input dimensions
  */
 function evaluateSemanticRules(input) {
   const dims = extractDims(input);
@@ -817,7 +870,11 @@ function evaluateSemanticRules(input) {
   let best = null;
   let bestP = Infinity;
 
-  for (const rule of BUILT_IN_RULES) {
+  // Merge built-in rules with user-defined rules from semantic-rules/*.yaml
+  const allRules = BUILT_IN_RULES.concat(loadSemanticRulesYAML());
+  log("Semantic rules:", allRules.length, "total (" + BUILT_IN_RULES.length + " built-in + " + (allRules.length - BUILT_IN_RULES.length) + " YAML)");
+
+  for (const rule of allRules) {
     const m = rule.match;
     let matched = 0, total = 0;
 
@@ -1663,14 +1720,43 @@ export async function runInit(args: string[]): Promise<void> {
     }
 
     // Scan agent.md and convert to semantic rules
+    let agentMdRules: import("../semantic/types.js").SemanticRule[] = [];
     try {
       const { scanProjectRules } = await import("../semantic/agent-md-scanner.js");
       const { generateSemanticRulesFromExtracted } = await import("../semantic/hook-generator.js");
       const extracted = await scanProjectRules(targetDir);
-      const agentMdRules = generateSemanticRulesFromExtracted(extracted);
+      agentMdRules = generateSemanticRulesFromExtracted(extracted);
       if (agentMdRules.length > 0) {
         adapter.addRules(agentMdRules);
         console.log(`    ├─ ${agentMdRules.length} agent.md rules`);
+
+        // Write agent.md rules to semantic-rules/agent-md.yaml
+        // so handler.mjs can load them at runtime
+        const yamlLines: string[] = ["# Auto-generated from agent.md — do not edit manually", "rules:"];
+        for (const r of agentMdRules) {
+          yamlLines.push(`  - name: ${JSON.stringify(r.name)}`);
+          if (r.description) yamlLines.push(`    description: ${JSON.stringify(r.description)}`);
+          yamlLines.push(`    match:`);
+          const m = r.match;
+          const q = (s: string) => JSON.stringify(s);
+          if (m.tool_name && m.tool_name.length) yamlLines.push(`      tool_name: [${m.tool_name.map(q).join(", ")}]`);
+          if (m.file_path && m.file_path.length) yamlLines.push(`      file_path: [${m.file_path.map(q).join(", ")}]`);
+          if (m.content && m.content.length) yamlLines.push(`      content: [${m.content.map(q).join(", ")}]`);
+          if (m.command && m.command.length) yamlLines.push(`      command: [${m.command.map(q).join(", ")}]`);
+          if (m.mcp_server && m.mcp_server.length) yamlLines.push(`      mcp_server: [${m.mcp_server.map(q).join(", ")}]`);
+          if (m.file_type && m.file_type.length) yamlLines.push(`      file_type: [${m.file_type.map(q).join(", ")}]`);
+          yamlLines.push(`    action: ${r.action}`);
+          yamlLines.push(`    feedback: ${JSON.stringify(r.feedback)}`);
+          if (r.suggestions && r.suggestions.length) {
+            yamlLines.push(`    suggestions: [${r.suggestions.map(q).join(", ")}]`);
+          }
+        }
+        fs.writeFileSync(
+          path.join(harnessDir, "semantic-rules", "agent-md.yaml"),
+          yamlLines.join("\n") + "\n",
+          "utf-8"
+        );
+        console.log(`    └─ Written to semantic-rules/agent-md.yaml`);
       }
     } catch {
       // agent.md scanning is optional
