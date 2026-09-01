@@ -1,4 +1,4 @@
-node_modules/
+﻿node_modules/
 dist/
 
 # Test files
@@ -11,6 +11,14 @@ src/test-*.ts
 test-project/
 test-copilot/
 
-# Trace files
-.harness/traces/
+# Scaffold generated files (hannah init)
+.harness/
+.claude/
+.github/hooks/
+.qoder/
+.codex/
+.trae/
+.cursor/
+
+# Trace files (legacy)
 traces/

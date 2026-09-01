@@ -331,9 +331,47 @@ function matchesSemanticRule(rule: SemanticRule, input: CodexHookInput): boolean
 }
 
 function resolveField(field: string, input: CodexHookInput): unknown {
-  const parts = field.split(".");
+  // Field alias mapping: policy template fields -> Codex input fields
+  // Supports both top-level fields and nested paths
+  const fieldAliases: Record<string, string> = {
+    // Top-level field aliases
+    "toolName": "tool_name",
+    "toolInput": "tool_input",
+    "input": "tool_input",
+    "toolOutput": "tool_output",
+    "output": "tool_output",
+    "sessionId": "session_id",
+    "toolUseId": "tool_use_id",
+    // Nested field shortcuts: direct field names -> tool_input.xxx
+    "filePath": "tool_input.file_path",
+    "filepath": "tool_input.file_path",
+    "command": "tool_input.command",
+    "content": "tool_input.content",
+    "text": "tool_input.text",
+    "path": "tool_input.path",
+    "file": "tool_input.file",
+    "server": "tool_input.server",
+    "operation": "tool_input.operation",
+  };
+
+  // Normalize field name
+  let normalizedField = field;
+  
+  // Check if the entire field name has an alias (e.g., "filePath" -> "tool_input.file_path")
+  if (fieldAliases[field]) {
+    normalizedField = fieldAliases[field];
+  } else {
+    // Handle nested fields like "input.command" -> "tool_input.command"
+    const parts = field.split(".");
+    if (parts.length > 0 && fieldAliases[parts[0]]) {
+      parts[0] = fieldAliases[parts[0]];
+      normalizedField = parts.join(".");
+    }
+  }
+
+  const normalizedParts = normalizedField.split(".");
   let current: unknown = input;
-  for (const part of parts) {
+  for (const part of normalizedParts) {
     if (current === null || current === undefined) return undefined;
     if (typeof current !== "object") return undefined;
     current = (current as Record<string, unknown>)[part];
