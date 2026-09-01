@@ -12,6 +12,7 @@ test-project/
 test-copilot/
 
 # Scaffold generated files (hannah init)
+.vscode/
 .harness/
 .claude/
 .github/hooks/

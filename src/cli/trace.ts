@@ -4,11 +4,11 @@
  * Reads .harness/traces/*.jsonl and renders a timeline view.
  *
  * Usage:
- *   hannah trace              — show last 50 entries
- *   hannah trace --all        — show all entries
- *   hannah trace --follow     — tail -f style
- *   hannah trace --json       — output raw JSON
- *   hannah trace --denied     — only show denied events
+ *   hannah trace              ? show last 50 entries
+ *   hannah trace --all        ? show all entries
+ *   hannah trace --follow     ? tail -f style
+ *   hannah trace --json       ? output raw JSON
+ *   hannah trace --denied     ? only show denied events
  */
 
 import * as fs from "node:fs";
@@ -76,12 +76,12 @@ export function runTrace(args: string[]): void {
 
   // Follow mode
   if (follow) {
-    console.log("\n  (following — press Ctrl+C to stop)\n");
+    console.log("\n  (following ? press Ctrl+C to stop)\n");
     followTraces(traceDir, entries.length);
   }
 }
 
-// ─── Trace Reading ──────────────────────────────────────────────────
+// ??? Trace Reading ??????????????????????????????????????????????????
 
 function readAllTraces(traceDir: string): TraceEntry[] {
   const files = fs.readdirSync(traceDir)
@@ -105,7 +105,7 @@ function readAllTraces(traceDir: string): TraceEntry[] {
   return entries;
 }
 
-// ─── Timeline Renderer ──────────────────────────────────────────────
+// ??? Timeline Renderer ??????????????????????????????????????????????
 
 /**
  * Convert ISO timestamp to local time string.
@@ -136,15 +136,15 @@ function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
   const projectName = extractProjectName(harnessDir);
 
   console.log("");
-  console.log(`  Agent Runtime Trace — ${projectName}`);
-  console.log("  " + "─".repeat(65));
+  console.log(`  Agent Runtime Trace ? ${projectName}`);
+  console.log("  " + "?".repeat(65));
   console.log("");
   console.log("  Time        Action  Event                    Source         Details");
-  console.log("  " + "─".repeat(65));
+  console.log("  " + "?".repeat(65));
 
   for (const entry of entries) {
     const time = toLocalTime(entry.timestamp);
-    const action = entry.action.toUpperCase().padEnd(6);
+    const action = (entry.action || 'allow').toUpperCase().padEnd(6);
     const event = entry.event.padEnd(24);
     const source = (entry.source || "unknown").padEnd(13);
 
@@ -158,14 +158,14 @@ function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
     // Show feedback on separate line if present
     if (entry.feedback && entry.feedback.length > 0) {
       for (const msg of entry.feedback) {
-        console.log(`            └─ ${msg}`);
+        console.log(`            ?? ${msg}`);
       }
     }
   }
 
   // Summary
   console.log("");
-  console.log("  " + "─".repeat(65));
+  console.log("  " + "?".repeat(65));
 
   const total = entries.length;
   const denied = entries.filter((e) => e.action === "deny").length;
@@ -181,7 +181,7 @@ function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
     const duration = formatDuration(
       new Date(last).getTime() - new Date(first).getTime(),
     );
-    console.log(`  Range: ${toLocalTimeShort(first)} → ${toLocalTimeShort(last)} (${duration})`);
+    console.log(`  Range: ${toLocalTimeShort(first)} ? ${toLocalTimeShort(last)} (${duration})`);
   }
 
   console.log("");
@@ -205,7 +205,7 @@ function buildDetails(entry: TraceEntry): string {
     parts.push(short);
   }
 
-  return parts.join(" → ") || "";
+  return parts.join(" ? ") || "";
 }
 
 function formatDuration(ms: number): string {
@@ -220,7 +220,7 @@ function formatDuration(ms: number): string {
   return `${hours}h ${remainMin}m`;
 }
 
-// ─── Follow Mode ────────────────────────────────────────────────────
+// ??? Follow Mode ????????????????????????????????????????????????????
 
 function followTraces(traceDir: string, startIndex: number): void {
   // Find the latest file
@@ -268,7 +268,7 @@ function followTraces(traceDir: string, startIndex: number): void {
 
 function renderEntry(entry: TraceEntry): void {
   const time = toLocalTime(entry.timestamp);
-  const action = entry.action.toUpperCase().padEnd(6);
+  const action = (entry.action || 'allow').toUpperCase().padEnd(6);
   const event = entry.event.padEnd(24);
   const source = (entry.source || "unknown").padEnd(13);
   const details = buildDetails(entry);
@@ -276,12 +276,12 @@ function renderEntry(entry: TraceEntry): void {
   console.log(`  ${time}  ${action}  ${event}  ${source}  ${details}`);
   if (entry.feedback?.length > 0) {
     for (const msg of entry.feedback) {
-      console.log(`            └─ ${msg}`);
+      console.log(`            ?? ${msg}`);
     }
   }
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────
+// ??? Helpers ????????????????????????????????????????????????????????
 
 function findHarnessDir(): string | null {
   let dir = process.cwd();
