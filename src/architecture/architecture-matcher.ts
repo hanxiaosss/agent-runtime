@@ -172,11 +172,12 @@ function parseArchitectureYaml(content: string): ArchitectureConfig {
         continue;
       }
       if (currentLayer && inPatterns && trimmed.startsWith("- ")) {
-        currentLayer.patterns.push(trimmed.slice(2).trim());
+        const val = trimmed.slice(2).trim().replace(/^['"]|['"]$/g, "");
+        currentLayer.patterns.push(val);
         continue;
       }
       if (currentLayer && trimmed.startsWith("description:")) {
-        currentLayer.description = trimmed.replace("description:", "").trim();
+        currentLayer.description = trimmed.replace("description:", "").trim().replace(/^['"]|['"]$/g, "");
         inPatterns = false;
         continue;
       }

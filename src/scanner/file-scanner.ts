@@ -32,17 +32,29 @@ export interface ScanResult {
 
 const SENSITIVE_PATTERNS = [
   "**/.env",
+  ".env",
   "**/.env.*",
+  ".env.*",
   "**/*.env",
+  "*.env",
   "**/*.pem",
+  "*.pem",
   "**/*.key",
+  "*.key",
   "**/*.cert",
+  "*.cert",
   "**/*.p12",
+  "*.p12",
   "**/secrets/**",
+  "secrets/**",
   "**/credentials/**",
+  "credentials/**",
   "**/.ssh/**",
+  ".ssh/**",
   "**/id_rsa*",
+  "id_rsa*",
   "**/.aws/credentials",
+  ".aws/credentials",
 ];
 
 const LOCK_FILE_PATTERNS = [
