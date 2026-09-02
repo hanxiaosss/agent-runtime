@@ -60,6 +60,62 @@ interface DiscoveredResource {
   mcpServers?: Record<string, unknown>;
 }
 
+const GENERIC_MCP_CONFIG_PATTERNS = [
+  "mcp.json",
+  "mcp-config.json",
+  "mcp-servers.json",
+  ".mcp.json",
+  "mcp_settings.json",
+];
+
+/**
+ * Discover MCP config files generically across the project.
+ * Scans common locations and patterns that may not be tied to a specific agent.
+ */
+export function discoverProjectMcpConfigs(projectRoot: string): Array<{ path: string; relativePath: string }> {
+  const found: Array<{ path: string; relativePath: string }> = [];
+  const seen = new Set<string>();
+
+  // Scan project root for common MCP config filenames
+  for (const pattern of GENERIC_MCP_CONFIG_PATTERNS) {
+    const absPath = path.join(projectRoot, pattern);
+    if (fs.existsSync(absPath) && fs.statSync(absPath).isFile()) {
+      const realPath = fs.realpathSync(absPath);
+      if (!seen.has(realPath)) {
+        seen.add(realPath);
+        found.push({ path: absPath, relativePath: pattern });
+      }
+    }
+  }
+
+  // Scan common subdirectories for MCP configs
+  const scanDirs = [".vscode", ".config", "config", "."];
+  for (const dir of scanDirs) {
+    const absDir = path.join(projectRoot, dir);
+    if (!fs.existsSync(absDir) || !fs.statSync(absDir).isDirectory()) continue;
+
+    try {
+      const entries = fs.readdirSync(absDir);
+      for (const entry of entries) {
+        const lower = entry.toLowerCase();
+        if (lower.includes("mcp") && lower.endsWith(".json")) {
+          const absPath = path.join(absDir, entry);
+          if (!fs.statSync(absPath).isFile()) continue;
+          const realPath = fs.realpathSync(absPath);
+          if (seen.has(realPath)) continue;
+          seen.add(realPath);
+          const relPath = path.relative(projectRoot, absPath);
+          found.push({ path: absPath, relativePath: relPath });
+        }
+      }
+    } catch {
+      // ignore permission errors
+    }
+  }
+
+  return found;
+}
+
 export function scanAgentResources(projectRoot: string, selectedAgentValue: string): DiscoveredResource[] {
   const discovered: DiscoveredResource[] = [];
 
@@ -113,6 +169,24 @@ export function scanAgentResources(projectRoot: string, selectedAgentValue: stri
         }
       }
     }
+  }
+
+  // Also discover generic project-level MCP configs
+  const projectMcpConfigs = discoverProjectMcpConfigs(projectRoot);
+  for (const mcpConfig of projectMcpConfigs) {
+    // Skip if this config is already associated with a known agent
+    const isKnownAgentConfig = AGENT_RESOURCE_MAP.some(agent =>
+      agent.mcpConfigFiles.some(f => mcpConfig.relativePath === f) ||
+      agent.mcpSettingsFiles.some(s => mcpConfig.relativePath === s.path)
+    );
+    if (isKnownAgentConfig) continue;
+
+    discovered.push({
+      sourceAgent: "project",
+      type: "mcp-file",
+      sourcePath: mcpConfig.path,
+      relativePath: mcpConfig.relativePath,
+    });
   }
 
   return discovered;
@@ -244,4 +318,9 @@ export function linkAgentResources(
       }
     }
   }
-}
+
+
+/**
+ * Generic MCP config file patterns to discover in the project.
+ * These are common filenames used across various tools and editors.
+ */}
