@@ -24,6 +24,10 @@ import { runSync } from "./cli/sync.js";
 import { runTrace } from "./cli/trace.js";
 import { runSummary } from "./cli/summary.js";
 import { runAnalyze } from "./cli/analyze.js";
+import { runExport } from "./cli/export.js";
+import { runSession } from "./cli/session.js";
+import { runPolicy } from "./cli/policy.js";
+import { runLearn } from "./cli/learn.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -49,6 +53,34 @@ function printHelp(): void {
     analyze [options]       Analyze traces for rule optimization
       --today                 Summary of today only
       --days N                Summary of last N days
+    export [options]        Export trace data
+      --format=<fmt>          Output format: json, csv, jsonl (default: json)
+      --output=<file>         Output file path
+      --days=N                Export last N days (default: 7)
+      --session=<id>          Export specific session
+    session [subcommand]    Manage agent sessions
+      list [--all]            List active/all sessions
+      info <id>               Show session details
+      archive <id>            Archive a session
+      cleanup [--days=N]      Remove old trace files (default: 30 days)
+    policy [subcommand]     Manage policies
+      list                    List all policies
+      validate                Validate all policy files
+      show <name>             Show policy details
+      check <file>            Check a specific policy file
+    monitor [options]       Start real-time monitoring server
+      --port=N                Server port (default: 4848)
+      --open                  Open browser after start
+    web [options]           Start WebUI Dashboard
+      --port=N                Server port (default: 4849)
+      --open                  Open browser after start
+    learn [subcommand]      Self-learning intelligence
+      full                  Full analysis (patterns + anomalies + recommendations)
+      patterns              Behavior pattern analysis
+      anomalies             Anomaly detection
+      recommend             Policy recommendations
+      escalation [stats|reset]  Escalation management
+      --days=N              Analysis period (default: 7)
     help                    Show this help message
 
   Examples:
@@ -95,6 +127,40 @@ switch (command) {
 
   case "analyze":
     runAnalyze(args.slice(1));
+    break;
+
+  case "export":
+    runExport(args.slice(1));
+    break;
+
+  case "session":
+    runSession(args.slice(1));
+    break;
+
+  case "policy":
+    runPolicy(args.slice(1));
+    break;
+
+  case "monitor":
+    import("./server/websocket.js").then((mod) => {
+      mod.runMonitor(args.slice(1));
+    }).catch((err: Error) => {
+      console.error("Error starting monitor:", err.message);
+      process.exit(1);
+    });
+    break;
+
+  case "web":
+    import("./server/dashboard.js").then((mod) => {
+      mod.runWeb(args.slice(1));
+    }).catch((err: Error) => {
+      console.error("Error starting web UI:", err.message);
+      process.exit(1);
+    });
+    break;
+
+  case "learn":
+    runLearn(args.slice(1));
     break;
 
   case "help":

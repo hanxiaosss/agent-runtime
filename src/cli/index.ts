@@ -16,3 +16,8 @@ export {
   loadSemanticRulesFromDir,
 } from "./yaml-loader.js";
 export type { HarnessConfig } from "./yaml-loader.js";
+
+export { runExport } from "./export.js";
+export { runSession } from "./session.js";
+export { runPolicy } from "./policy.js";
+export { runLearn } from "./learn.js";

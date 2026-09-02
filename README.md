@@ -52,16 +52,17 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 
 > **所有 Agent 都支持 Hook 机制**
 
-| Agent | Hook 支持 | 配置位置 | 配置格式 | 状态 |
-|-------|----------|---------|---------|------|
-| Claude Code | ✅ 完整支持 | `.claude/settings.json` | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用 |
-| Qoder | ✅ 完整支持 | `.qoder/settings.json` | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用 |
-| Codex CLI | ✅ 完整支持 | `.codex/hooks.json` | `{ description, hooks: { matcher, PreToolUse: [{ command }] } }` | ✅ 可用 |
-| GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | `{ version: 1, hooks: { preToolUse: [{ type, bash, powershell }] } }` | ✅ 可用 |
-| Cursor | ⚠️ 待验证 | `.cursor/hooks.json` | `{ hooks: { PreToolUse: [{ command }] } }` | ⚠️ 待验证 |
-| Trae | ⚠️ 待验证 | `.trae/settings.json` | `{ hooks: { PreToolUse: [{ command }] } }` | ⚠️ 实验性 |
+| Agent          | Hook 支持   | 配置位置                   | 配置格式                                                               | 状态      |
+| -------------- | ----------- | -------------------------- | ---------------------------------------------------------------------- | --------- |
+| Claude Code    | ✅ 完整支持 | `.claude/settings.json`    | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用   |
+| Qoder          | ✅ 完整支持 | `.qoder/settings.json`     | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用   |
+| Codex CLI      | ✅ 完整支持 | `.codex/hooks.json`        | `{ description, hooks: { matcher, PreToolUse: [{ command }] } }`       | ✅ 可用   |
+| GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | `{ version: 1, hooks: { preToolUse: [{ type, bash, powershell }] } }`  | ✅ 可用   |
+| Cursor         | ⚠️ 待验证   | `.cursor/hooks.json`       | `{ hooks: { PreToolUse: [{ command }] } }`                             | ⚠️ 待验证 |
+| Trae           | ⚠️ 待验证   | `.trae/settings.json`      | `{ hooks: { PreToolUse: [{ command }] } }`                             | ⚠️ 实验性 |
 
 **重要说明**：
+
 - **Codex CLI** 的 `hooks.json` 格式要求顶层包含 `description` 和 `hooks` 字段，`hooks` 内部需包含 `matcher` 和各事件（`PreToolUse`/`PostToolUse` 等）
 - **GitHub Copilot** 使用 `preToolUse`（小驼峰）而非 `PreToolUse`，且需指定 `version: 1` 和平台命令（`bash`/`powershell`）
 - ⚠️ **Cursor Agent** 目前**可能不支持** hooks（配置了但 agent 没有调用）
@@ -88,6 +89,7 @@ hannah init
 ```
 
 This will:
+
 1. Create `.harness/` directory with policies and hooks
 2. Detect your project's tech stack (React, Vue, Node.js, etc.)
 3. Scan for agent instruction files (agent.md, CLAUDE.md, etc.)
@@ -126,6 +128,7 @@ hannah sync
 ## Example Output
 
 ### Trace Timeline
+
 ```
 Agent Runtime Trace — my-project
 ────────────────────────────────────────────────────────────────
@@ -139,6 +142,7 @@ Time        Action  Event              Source         Details
 ```
 
 ### Summary Statistics
+
 ```
 Agent Runtime Summary — my-project
 ═════════════════════════════════════════════════════════
@@ -193,14 +197,17 @@ Hannah goes beyond simple event matching with **semantic-level hooks** that unde
 # Project Rules
 
 ## Security
+
 - Don't commit .env files or secrets
 - Never use eval() or innerHTML with user input
 
 ## Database
+
 - Don't drop tables or delete all records
 - Always backup before migration
 
 ## Architecture
+
 - Don't modify production configuration directly
 ```
 
@@ -208,14 +215,14 @@ Hannah automatically extracts these rules and creates semantic hooks.
 
 ### Built-in Semantic Hooks
 
-| Hook | Description | Tech Stack |
-|------|-------------|------------|
-| `database-protection` | Prevent dangerous DB operations | Any with database |
-| `react-security` | Prevent insecure React patterns | React, Next.js |
-| `vue-security` | Prevent insecure Vue patterns | Vue |
-| `environment-protection` | Protect .env files | All |
-| `secret-detection` | Detect hardcoded secrets | All |
-| `production-protection` | Protect production configs | All |
+| Hook                     | Description                     | Tech Stack        |
+| ------------------------ | ------------------------------- | ----------------- |
+| `database-protection`    | Prevent dangerous DB operations | Any with database |
+| `react-security`         | Prevent insecure React patterns | React, Next.js    |
+| `vue-security`           | Prevent insecure Vue patterns   | Vue               |
+| `environment-protection` | Protect .env files              | All               |
+| `secret-detection`       | Detect hardcoded secrets        | All               |
+| `production-protection`  | Protect production configs      | All               |
 
 ## Architecture
 
@@ -266,25 +273,25 @@ Feedback (to agent)
 
 ## Unified Event Taxonomy
 
-| Event | Category | Blockable | Description |
-|-------|----------|-----------|-------------|
-| `tool.before` | tool | ✅ | Before any tool execution |
-| `tool.after` | tool | ❌ | After tool execution |
-| `code.before_modify` | code | ✅ | Before file write/edit |
-| `code.after_modify` | code | ❌ | After file modification |
-| `mcp.before` | mcp | ✅ | Before MCP server call |
-| `mcp.after` | mcp | ❌ | After MCP call |
-| `task.start` | task | ❌ | Task begins |
-| `task.before_complete` | task | ✅ | Quality gate before completion |
-| `task.complete` | task | ❌ | Task finished |
-| `confirm.before` | confirm | ✅ | Agent about to stop |
-| `confirm.after` | confirm | ❌ | Session ended |
-| `api.before` | api | ✅ | External HTTP request |
-| `api.after` | api | ❌ | HTTP request completed |
-| `git.worktree_keep` | git | ❌ | Worktree preserved |
-| `git.worktree_undo` | git | ❌ | Worktree reverted |
-| `skill.before` | skill | ✅ | Skill execution starts |
-| `skill.after` | skill | ❌ | Skill execution ends |
+| Event                  | Category | Blockable | Description                    |
+| ---------------------- | -------- | --------- | ------------------------------ |
+| `tool.before`          | tool     | ✅        | Before any tool execution      |
+| `tool.after`           | tool     | ❌        | After tool execution           |
+| `code.before_modify`   | code     | ✅        | Before file write/edit         |
+| `code.after_modify`    | code     | ❌        | After file modification        |
+| `mcp.before`           | mcp      | ✅        | Before MCP server call         |
+| `mcp.after`            | mcp      | ❌        | After MCP call                 |
+| `task.start`           | task     | ❌        | Task begins                    |
+| `task.before_complete` | task     | ✅        | Quality gate before completion |
+| `task.complete`        | task     | ❌        | Task finished                  |
+| `confirm.before`       | confirm  | ✅        | Agent about to stop            |
+| `confirm.after`        | confirm  | ❌        | Session ended                  |
+| `api.before`           | api      | ✅        | External HTTP request          |
+| `api.after`            | api      | ❌        | HTTP request completed         |
+| `git.worktree_keep`    | git      | ❌        | Worktree preserved             |
+| `git.worktree_undo`    | git      | ❌        | Worktree reverted              |
+| `skill.before`         | skill    | ✅        | Skill execution starts         |
+| `skill.after`          | skill    | ❌        | Skill execution ends           |
 
 See [Hook Adaptation Table](doc/guidelines/hook-adaptation-table.md) for complete runtime mappings.
 
@@ -343,9 +350,11 @@ rules:
 Generate `.harness/` directory with policies, hooks, and semantic hooks.
 
 Options:
+
 - `--agent=<name>` - Select agent directly (claude-code, copilot, qoder, codex, trae, cursor)
 
 What it does:
+
 - Creates `.harness/` directory structure
 - Generates default policies (protected files, MCP safety, git safety)
 - Detects tech stack and generates semantic hooks
@@ -357,12 +366,14 @@ What it does:
 Synchronize semantic hooks with project rules.
 
 What it does:
+
 - Re-scans agent.md for rule changes
 - Re-detects tech stack
 - Updates semantic hooks
 - Saves hook metadata
 
 When to use:
+
 - After modifying agent.md
 - After changing project dependencies
 - Periodically to keep hooks up-to-date
@@ -372,6 +383,7 @@ When to use:
 View agent runtime traces.
 
 Options:
+
 - `--all` - Show all entries (default: last 50)
 - `--follow` - Real-time follow mode
 - `--json` - Output raw JSON
@@ -382,6 +394,7 @@ Options:
 Show aggregate statistics.
 
 Options:
+
 - `--today` - Summary of today only
 - `--days N` - Summary of last N days
 
