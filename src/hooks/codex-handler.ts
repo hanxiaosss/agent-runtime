@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Codex CLI Hook Handler
  *
  * Standalone entry point for Codex CLI lifecycle hooks.
@@ -23,6 +23,9 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { extractIntent, loadIntentRules, type Intent, type IntentRule } from "../intent/intent-extractor.js";
+import { loadArchitectureConfig, checkToolArchitecture, type ArchitectureConfig } from "../architecture/architecture-matcher.js";
+import { scanFileWithWarnings, type ScanResult } from "../scanner/file-scanner.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,8 @@ interface CodexHookInput {
 }
 
 interface PolicyRule {
+  /** Rule ID (e.g., GIT-001, SEC-002) */
+  id?: string;
   name: string;
   when: string;
   match: Array<{
@@ -51,6 +56,8 @@ interface PolicyRule {
 }
 
 interface SemanticRule {
+  /** Rule ID (e.g., GIT-001, SEC-002) */
+  id?: string;
   name: string;
   description?: string;
   match: {
@@ -79,6 +86,9 @@ interface TraceEntry {
   input?: Record<string, unknown>;
   output?: unknown;
   sessionId?: string;
+  duration?: number;
+  modifiedFiles?: string[];
+  exitCode?: number;
 }
 
 interface HookDecision {
@@ -87,6 +97,10 @@ interface HookDecision {
   feedback?: string;
   ruleName?: string;
   suggestions?: string[];
+  output?: unknown;
+  duration?: number;
+  modifiedFiles?: string[];
+  exitCode?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -143,7 +157,15 @@ async function main(): Promise<void> {
   }
 
   if (phase === "post-tool-use") {
-    writeTrace("tool.after", input, { decision: "allow" });
+    // 记录完整的执行上下文
+    const traceResult: HookDecision = {
+      decision: "allow",
+      output: input.tool_output,
+      duration: calculateDuration(input),
+      modifiedFiles: extractModifiedFiles(input),
+      exitCode: input.exit_code as number | undefined,
+    };
+    writeTrace("tool.after", input, traceResult);
     process.exit(0);
   }
 
@@ -167,19 +189,101 @@ async function main(): Promise<void> {
 function evaluatePreToolUse(input: CodexHookInput): HookDecision {
   const allow: HookDecision = { decision: "allow" };
 
+  // 0. Extract intent
+  const intent = extractIntent(input);
+  log(`[intent] ${intent.type} (confidence: ${intent.confidence})`);
+
   // 1. Load and evaluate declarative policies
   const policyResult = evaluatePolicies(input);
   if (policyResult.decision === "deny") return policyResult;
 
-  // 2. Load and evaluate semantic rules
+  // 2. Evaluate intent rules
+  const intentResult = evaluateIntentRules(intent);
+  if (intentResult.decision === "deny") return intentResult;
+
+  // 3. Load and evaluate semantic rules
   const semanticResult = evaluateSemanticRules(input);
   if (semanticResult.decision === "deny") return semanticResult;
 
-  // 3. Return the most restrictive result
+  // 4. Evaluate architecture rules
+  const archResult = evaluateArchitecture(input);
+  if (archResult.decision === "deny") return archResult;
+
+  // 5. Evaluate file sensitivity
+  const fileResult = evaluateFileSensitivity(input);
+  if (fileResult.decision === "deny") return fileResult;
+
+  // 6. Return the most restrictive result
   if (policyResult.decision === "warn") return policyResult;
+  if (intentResult.decision === "warn") return intentResult;
   if (semanticResult.decision === "warn") return semanticResult;
+  if (archResult.decision === "warn") return archResult;
+  if (fileResult.decision === "warn") return fileResult;
 
   return allow;
+}
+
+function evaluateIntentRules(intent: Intent): HookDecision {
+  const rules = loadIntentRules(HARNESS_DIR);
+  
+  for (const rule of rules) {
+    if (rule.intent === intent.type && intent.confidence >= rule.minConfidence) {
+      return {
+        decision: rule.action,
+        reason: `Intent rule "${rule.name}" matched: ${intent.type}`,
+        feedback: rule.feedback,
+        ruleName: rule.name,
+        suggestions: rule.suggestions,
+      };
+    }
+  }
+  
+  return { decision: "allow" };
+}
+
+function evaluateArchitecture(input: CodexHookInput): HookDecision {
+  const config = loadArchitectureConfig(HARNESS_DIR);
+  if (!config) return { decision: "allow" };
+
+  const violation = checkToolArchitecture(input.tool_input || {}, config);
+  if (!violation) return { decision: "allow" };
+
+  return {
+    decision: "deny",
+    reason: `[ARCH] ${violation.fromLayer} -> ${violation.toLayer}: ${violation.feedback}`,
+    feedback: `[ARCH-001] ${violation.feedback}`,
+    ruleName: "architecture-layer-violation",
+    suggestions: violation.suggestions,
+  };
+}
+
+function evaluateFileSensitivity(input: CodexHookInput): HookDecision {
+  const toolInput = input.tool_input || {};
+  const filePath = String(toolInput.file_path || toolInput.path || toolInput.file || "");
+  if (!filePath) return { decision: "allow" };
+
+  const scan = scanFileWithWarnings(filePath);
+  if (scan.metadata.riskLevel === "critical") {
+    return {
+      decision: "deny",
+      reason: `[FILE-001] Critical sensitivity: ${scan.warnings.join("; ")}`,
+      feedback: `[FILE-001] Cannot modify critical-sensitivity file: ${filePath}`,
+      ruleName: "file-sensitivity-critical",
+      suggestions: scan.suggestions,
+    };
+  }
+
+  if (scan.warnings.length > 0) {
+    return {
+      decision: "warn",
+      reason: `[FILE] ${scan.warnings.join("; ")}`,
+      feedback: scan.warnings.join("\n"),
+      ruleName: "file-sensitivity-warning",
+      suggestions: scan.suggestions,
+    };
+  }
+
+  return { decision: "allow" };
 }
 
 function evaluateStop(input: CodexHookInput): HookDecision {
@@ -203,7 +307,7 @@ function evaluatePolicies(
         const result: HookDecision = {
           decision: rule.action === "modify" ? "warn" : rule.action,
           reason: `Policy rule "${rule.name}" matched`,
-          feedback: rule.feedback,
+          feedback: rule.id ? `[${rule.id}] ${rule.feedback}` : rule.feedback,
           ruleName: rule.name,
           suggestions: rule.suggestions,
         };
@@ -241,7 +345,7 @@ function evaluateSemanticRules(input: CodexHookInput): HookDecision {
       const result: HookDecision = {
         decision: rule.action,
         reason: `Semantic rule "${rule.name}" matched`,
-        feedback: rule.feedback,
+        feedback: rule.id ? `[${rule.id}] ${rule.feedback}` : rule.feedback,
         ruleName: rule.name,
         suggestions: rule.suggestions,
       };
@@ -662,6 +766,43 @@ function getIndent(line: string): number {
 
 // ─── Trace Writer ─────────────────────────────────────────────────────────────
 
+
+// ─── Post-hook Helpers ──────────────────────────────────────────────────────
+
+function calculateDuration(input: CodexHookInput): number {
+  if (!input.timestamp) return 0;
+  const startTime = new Date(String(input.timestamp)).getTime();
+  return Date.now() - startTime;
+}
+
+function extractModifiedFiles(input: CodexHookInput): string[] {
+  const files: string[] = [];
+  const output = input.tool_output;
+  
+  if (!output) return files;
+  
+  // 处理 Write/Edit 工具的输出
+  if (typeof output === 'object' && output !== null) {
+    const out = output as Record<string, unknown>;
+    if (out.filePath && typeof out.filePath === 'string') {
+      files.push(out.filePath);
+    }
+    if (out.modifiedFiles && Array.isArray(out.modifiedFiles)) {
+      files.push(...out.modifiedFiles.map(String));
+    }
+  }
+  
+  // 处理 Bash 工具的输出（解析 git diff 等）
+  if (input.tool_name === 'Bash' && typeof output === 'string') {
+    const filePattern = /modified:\s+(\S+)/g;
+    let match;
+    while ((match = filePattern.exec(output)) !== null) {
+      files.push(match[1]);
+    }
+  }
+  
+  return files;
+}
 function writeTrace(
   event: string,
   input: CodexHookInput,
@@ -679,8 +820,11 @@ function writeTrace(
     reason: result.reason || "",
     ruleName: result.ruleName,
     input: sanitizeInput(input.tool_input),
-    output: input.tool_output,
+    output: result.output ?? input.tool_output,
     sessionId: input.session_id,
+    duration: result.duration,
+    modifiedFiles: result.modifiedFiles,
+    exitCode: result.exitCode,
   };
 
   try {

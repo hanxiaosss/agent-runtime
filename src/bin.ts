@@ -23,6 +23,7 @@ import { runInit } from "./cli/init/index.js";
 import { runSync } from "./cli/sync.js";
 import { runTrace } from "./cli/trace.js";
 import { runSummary } from "./cli/summary.js";
+import { runAnalyze } from "./cli/analyze.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -45,6 +46,7 @@ function printHelp(): void {
       --json                  Output raw JSON
       --denied                Only show denied events
     summary [options]       Show aggregate statistics
+    analyze [options]       Analyze traces for rule optimization
       --today                 Summary of today only
       --days N                Summary of last N days
     help                    Show this help message
@@ -89,6 +91,10 @@ switch (command) {
 
   case "summary":
     runSummary(args.slice(1));
+    break;
+
+  case "analyze":
+    runAnalyze(args.slice(1));
     break;
 
   case "help":

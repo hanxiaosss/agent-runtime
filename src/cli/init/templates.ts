@@ -29,7 +29,8 @@ name: protected-files
 description: Prevent modification of sensitive configuration and lock files
 
 rules:
-  - name: block-env-files
+    id: SEC-001
+
     when: code.before_modify
     match:
       - field: filePath
@@ -43,7 +44,8 @@ rules:
       - "Ask the human user to edit .env files"
       - "Use environment variables instead"
 
-  - name: block-lock-files
+    id: SEC-002
+
     when: code.before_modify
     match:
       - field: filePath
@@ -56,7 +58,8 @@ rules:
     suggestions:
       - "Use npm install, pnpm add, yarn add, etc."
 
-  - name: block-core-files
+    id: ARCH-001
+
     when: code.before_modify
     match:
       - field: filePath
@@ -68,7 +71,8 @@ rules:
     suggestions:
       - "Ask for human review before modifying core files"
 
-  - name: warn-config-changes
+    id: ARCH-002
+
     when: code.before_modify
     match:
       - field: filePath
@@ -89,7 +93,8 @@ name: mcp-safety
 description: Controls agent access to MCP servers and operations
 
 rules:
-  - name: block-database-writes
+    id: MCP-001
+
     when: mcp.before
     match:
       - field: server
@@ -105,7 +110,8 @@ rules:
     suggestions:
       - "Use the application API instead of direct database access"
 
-  - name: warn-database-reads
+    id: MCP-002
+
     when: mcp.before
     match:
       - field: server
@@ -116,7 +122,8 @@ rules:
       - "Ensure queries are read-only"
       - "Don't expose sensitive data"
 
-  - name: block-filesystem-delete
+    id: MCP-003
+
     when: mcp.before
     match:
       - field: server
@@ -139,7 +146,8 @@ name: git-safety
 description: Prevents dangerous git operations by agents
 
 rules:
-  - name: block-force-push
+    id: GIT-001
+
     when: tool.before
     match:
       - field: toolName
@@ -159,7 +167,8 @@ rules:
     suggestions:
       - "Use git push --force-with-lease instead"
 
-  - name: block-hard-reset
+    id: GIT-002
+
     when: tool.before
     match:
       - field: toolName
@@ -176,7 +185,8 @@ rules:
       - "Use git stash instead"
       - "Use git checkout to discard specific files"
 
-  - name: block-main-push
+    id: GIT-003
+
     when: tool.before
     match:
       - field: toolName
@@ -1319,4 +1329,59 @@ rules:
     action: deny
     feedback: "README is managed separately."
 \`\`\`
+`;
+
+export const ARCHITECTURE_YAML = `# Architecture Layer Definitions
+# Defines project layers and enforces dependency rules between them.
+# Violations are blocked at pre-tool-use time.
+
+layers:
+  - name: controller
+    description: "HTTP/RPC handlers, route definitions"
+    patterns:
+      - "**/controllers/**"
+      - "**/handlers/**"
+      - "**/routes/**"
+
+  - name: service
+    description: "Business logic layer"
+    patterns:
+      - "**/services/**"
+      - "**/use-cases/**"
+      - "**/domain/**"
+
+  - name: repository
+    description: "Data access layer"
+    patterns:
+      - "**/repositories/**"
+      - "**/dao/**"
+      - "**/models/**"
+
+  - name: infrastructure
+    description: "External integrations, DB drivers"
+    patterns:
+      - "**/infrastructure/**"
+      - "**/adapters/**"
+
+rules:
+  - from: controller
+    to: repository
+    allowed: false
+    feedback: "Controllers must not directly access the repository layer. Use services instead."
+    suggestions:
+      - "Route the call through a service layer"
+
+  - from: controller
+    to: infrastructure
+    allowed: false
+    feedback: "Controllers must not directly access infrastructure."
+    suggestions:
+      - "Abstract infrastructure behind a service interface"
+
+  - from: repository
+    to: controller
+    allowed: false
+    feedback: "Repository layer must not depend on controllers."
+    suggestions:
+      - "Use interfaces or events to decouple"
 `;

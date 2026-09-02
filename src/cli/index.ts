@@ -5,6 +5,7 @@
 export { runInit } from "./init/index.js";
 export { runTrace } from "./trace.js";
 export { runSummary } from "./summary.js";
+export { runAnalyze } from "./analyze.js";
 export {
   loadPolicyFromYAML,
   loadPolicyFromFile,
