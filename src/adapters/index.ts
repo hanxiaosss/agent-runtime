@@ -29,6 +29,14 @@ export type { CopilotHookInput } from "./copilot.js";
 export { TraeAdapter, runTraeCLI } from "./trae.js";
 export type { TraeHookInput } from "./trae.js";
 
+// Hook Adapter V2
+export { HookAdapterV2, type HookCapabilities, type HookExecutionContext } from "./hook-adapter-v2.js";
+export { CodexAdapterV2 } from "./codex-adapter-v2.js";
+export { CopilotAdapterV2 } from "./copilot-adapter-v2.js";
+export { ClaudeCodeAdapterV2 } from "./claude-code-adapter-v2.js";
+export { QoderAdapterV2 } from "./qoder-adapter-v2.js";
+export { TraeAdapterV2 } from "./trae-adapter-v2.js";
+
 // Cursor
 export { CursorAdapter, runCursorCLI } from "./cursor.js";
 export type { CursorHookInput, CursorHookOutput } from "./cursor.js";
