@@ -4,23 +4,75 @@
  * Reads .harness/traces/*.jsonl and renders a timeline view.
  *
  * Usage:
- *   hannah trace              ? show last 50 entries
- *   hannah trace --all        ? show all entries
- *   hannah trace --follow     ? tail -f style
- *   hannah trace --json       ? output raw JSON
- *   hannah trace --denied     ? only show denied events
+ *   hannah trace              - show last 50 entries
+ *   hannah trace --all        - show all entries
+ *   hannah trace --follow     - tail -f style
+ *   hannah trace --json       - output raw JSON
+ *   hannah trace --denied     - only show denied events
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+/**
+ * Unified trace entry — handles both formats:
+ *  1. handler.mjs format: { action, payload, feedback, source }
+ *  2. codex-handler.ts format: { decision, toolName, reason, input, output }
+ */
 interface TraceEntry {
   timestamp: string;
   event: string;
-  source: string;
-  action: string;
-  payload: Record<string, unknown>;
-  feedback: string[];
+  source?: string;
+  // handler.mjs fields
+  action?: string;
+  payload?: Record<string, unknown>;
+  feedback?: string[];
+  // codex-handler.ts fields
+  decision?: string;
+  toolName?: string;
+  reason?: string;
+  input?: Record<string, unknown>;
+  output?: unknown;
+  ruleName?: string;
+  sessionId?: string;
+  duration?: number;
+  modifiedFiles?: string[];
+  exitCode?: number;
+}
+
+/** Normalize action value from either format, case-insensitive. */
+function getAction(entry: TraceEntry): string {
+  return ((entry.action ?? entry.decision ?? "allow") as string).toLowerCase();
+}
+
+/** Get the effective tool name from either format. */
+function getToolName(entry: TraceEntry): string {
+  return (
+    (entry.payload?.toolName as string | undefined) ??
+    entry.toolName ??
+    "unknown"
+  );
+}
+
+/** Get the payload object from either format. */
+function getPayload(entry: TraceEntry): Record<string, unknown> {
+  if (entry.payload) return entry.payload;
+  // codex-handler format: wrap legacy fields into a pseudo-payload
+  const p: Record<string, unknown> = {};
+  if (entry.toolName) p.toolName = entry.toolName;
+  if (entry.input) p.input = entry.input;
+  if (entry.output !== undefined) p.output = entry.output;
+  if (entry.ruleName) p.ruleName = entry.ruleName;
+  if (entry.duration !== undefined) p.duration = entry.duration;
+  if (entry.modifiedFiles) p.modifiedFiles = entry.modifiedFiles;
+  return p;
+}
+
+/** Get feedback messages from either format. */
+function getFeedback(entry: TraceEntry): string[] {
+  if (entry.feedback && entry.feedback.length > 0) return entry.feedback;
+  if (entry.reason) return [entry.reason];
+  return [];
 }
 
 export function runTrace(args: string[]): void {
@@ -50,7 +102,7 @@ export function runTrace(args: string[]): void {
   // Filter
   let filtered = entries;
   if (deniedOnly) {
-    filtered = entries.filter((e) => e.action === "deny");
+    filtered = entries.filter((e) => getAction(e) === "deny");
   }
 
   // Sort by timestamp
@@ -76,12 +128,12 @@ export function runTrace(args: string[]): void {
 
   // Follow mode
   if (follow) {
-    console.log("\n  (following ? press Ctrl+C to stop)\n");
+    console.log("\n  (following - press Ctrl+C to stop)\n");
     followTraces(traceDir, entries.length);
   }
 }
 
-// ??? Trace Reading ??????????????????????????????????????????????????
+// ---- Trace Reading --------------------------------------------------------
 
 function readAllTraces(traceDir: string): TraceEntry[] {
   const files = fs.readdirSync(traceDir)
@@ -105,7 +157,7 @@ function readAllTraces(traceDir: string): TraceEntry[] {
   return entries;
 }
 
-// ??? Timeline Renderer ??????????????????????????????????????????????
+// ---- Timeline Renderer ----------------------------------------------------
 
 /**
  * Convert ISO timestamp to local time string.
@@ -132,45 +184,56 @@ function toLocalTimeShort(iso: string): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+/** Border character for table separators. */
+const BORDER = "─"; // ─
+
+/** Arrow character for time ranges. */
+const ARROW = "→"; // →
+
+/** Dot character for header. */
+const DOT = "●"; // ●
+
 function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
   const projectName = extractProjectName(harnessDir);
+  const sep = "  " + BORDER.repeat(65);
 
   console.log("");
-  console.log(`  Agent Runtime Trace ? ${projectName}`);
-  console.log("  " + "?".repeat(65));
+  console.log(`  Agent Runtime Trace ${DOT} ${projectName}`);
+  console.log(sep);
   console.log("");
   console.log("  Time        Action  Event                    Source         Details");
-  console.log("  " + "?".repeat(65));
+  console.log(sep);
 
   for (const entry of entries) {
     const time = toLocalTime(entry.timestamp);
-    const action = (entry.action || 'allow').toUpperCase().padEnd(6);
+    const action = getAction(entry);
+    const actionDisplay = action.toUpperCase().padEnd(6);
     const event = entry.event.padEnd(24);
-    const source = (entry.source || "unknown").padEnd(13);
+    const source = (entry.source || "hannah").padEnd(13);
+    const payload = getPayload(entry);
 
     // Build details string from payload
-    const details = buildDetails(entry);
+    const details = buildDetails(payload);
 
-    const actionColor = entry.action === "deny" ? "DENY" : entry.action === "warn" ? "WARN" : "    ";
-
-    console.log(`  ${time}  ${action}  ${event}  ${source}  ${details}`);
+    console.log(`  ${time}  ${actionDisplay}  ${event}  ${source}  ${details}`);
 
     // Show feedback on separate line if present
-    if (entry.feedback && entry.feedback.length > 0) {
-      for (const msg of entry.feedback) {
-        console.log(`            ?? ${msg}`);
+    const feedback = getFeedback(entry);
+    if (feedback.length > 0) {
+      for (const msg of feedback) {
+        console.log(`            ${ARROW} ${msg}`);
       }
     }
   }
 
   // Summary
   console.log("");
-  console.log("  " + "?".repeat(65));
+  console.log(sep);
 
   const total = entries.length;
-  const denied = entries.filter((e) => e.action === "deny").length;
-  const warned = entries.filter((e) => e.action === "warn").length;
-  const allowed = entries.filter((e) => e.action === "allow").length;
+  const denied = entries.filter((e) => getAction(e) === "deny").length;
+  const warned = entries.filter((e) => getAction(e) === "warn").length;
+  const allowed = entries.filter((e) => getAction(e) === "allow").length;
 
   console.log(`  Total: ${total} | Allowed: ${allowed} | Denied: ${denied} | Warned: ${warned}`);
 
@@ -181,31 +244,32 @@ function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
     const duration = formatDuration(
       new Date(last).getTime() - new Date(first).getTime(),
     );
-    console.log(`  Range: ${toLocalTimeShort(first)} ? ${toLocalTimeShort(last)} (${duration})`);
+    console.log(`  Range: ${toLocalTimeShort(first)} ${ARROW} ${toLocalTimeShort(last)} (${duration})`);
   }
 
   console.log("");
 }
 
-function buildDetails(entry: TraceEntry): string {
-  const p = entry.payload || {};
+function buildDetails(p: Record<string, unknown>): string {
   const parts: string[] = [];
 
   if (p.toolName) parts.push(String(p.toolName));
   if (p.filePath) {
     const fp = String(p.filePath);
-    // Shorten long paths
     const short = fp.length > 30 ? "..." + fp.slice(-27) : fp;
     parts.push(short);
   }
   if (p.server) parts.push(`${p.server}.${p.operation || ""}`);
-  if (p.input && typeof p.input === "object" && (p.input as any).command) {
-    const cmd = String((p.input as any).command);
-    const short = cmd.length > 30 ? cmd.slice(0, 27) + "..." : cmd;
-    parts.push(short);
+  if (p.input && typeof p.input === "object") {
+    const cmd = (p.input as Record<string, unknown>).command;
+    if (cmd) {
+      const str = String(cmd);
+      const short = str.length > 30 ? str.slice(0, 27) + "..." : str;
+      parts.push(short);
+    }
   }
 
-  return parts.join(" ? ") || "";
+  return parts.join(" | ") || "";
 }
 
 function formatDuration(ms: number): string {
@@ -220,10 +284,9 @@ function formatDuration(ms: number): string {
   return `${hours}h ${remainMin}m`;
 }
 
-// ??? Follow Mode ????????????????????????????????????????????????????
+// ---- Follow Mode ----------------------------------------------------------
 
 function followTraces(traceDir: string, startIndex: number): void {
-  // Find the latest file
   const files = fs.readdirSync(traceDir)
     .filter((f) => f.endsWith(".jsonl"))
     .sort();
@@ -233,7 +296,6 @@ function followTraces(traceDir: string, startIndex: number): void {
   const latestFile = path.join(traceDir, files[files.length - 1]);
   let pos = fs.statSync(latestFile).size;
 
-  // Poll for new content
   const interval = setInterval(() => {
     try {
       const stat = fs.statSync(latestFile);
@@ -268,20 +330,22 @@ function followTraces(traceDir: string, startIndex: number): void {
 
 function renderEntry(entry: TraceEntry): void {
   const time = toLocalTime(entry.timestamp);
-  const action = (entry.action || 'allow').toUpperCase().padEnd(6);
+  const action = getAction(entry).toUpperCase().padEnd(6);
   const event = entry.event.padEnd(24);
-  const source = (entry.source || "unknown").padEnd(13);
-  const details = buildDetails(entry);
+  const source = (entry.source || "hannah").padEnd(13);
+  const payload = getPayload(entry);
+  const details = buildDetails(payload);
 
   console.log(`  ${time}  ${action}  ${event}  ${source}  ${details}`);
-  if (entry.feedback?.length > 0) {
-    for (const msg of entry.feedback) {
-      console.log(`            ?? ${msg}`);
+  const feedback = getFeedback(entry);
+  if (feedback.length > 0) {
+    for (const msg of feedback) {
+      console.log(`            ${ARROW} ${msg}`);
     }
   }
 }
 
-// ??? Helpers ????????????????????????????????????????????????????????
+// ---- Helpers --------------------------------------------------------------
 
 function findHarnessDir(): string | null {
   let dir = process.cwd();
