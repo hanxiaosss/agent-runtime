@@ -11,14 +11,14 @@
  *       2 = deny  (stderr message shown to agent as feedback)
  *   - Writes traces to .harness/traces/YYYY-MM-DD.jsonl
  *
- * Configuration: .codex/config.toml
- *   [[hooks.PreToolUse]]
- *   matcher = "*"
- *   command = "node dist/hooks/codex-handler.js pre-tool-use"
- *
- *   [[hooks.PostToolUse]]
- *   matcher = "*"
- *   command = "node dist/hooks/codex-handler.js post-tool-use"
+ * Configuration: .codex/hooks.json
+ *   {
+ *     "hooks": [
+ *       { "event": "PreToolUse", "matcher": "*", "command": "node dist/hooks/codex-handler.js pre-tool-use" },
+ *       { "event": "PostToolUse", "matcher": "*", "command": "node dist/hooks/codex-handler.js post-tool-use" },
+ *       { "event": "Stop", "matcher": "", "command": "node dist/hooks/codex-handler.js stop" }
+ *     ]
+ *   }
  */
 
 import * as fs from "node:fs";

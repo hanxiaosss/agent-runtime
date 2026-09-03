@@ -1265,20 +1265,28 @@ Similar to Claude Code, add hooks to \`.qoder/settings.json\`.
 
 #### Codex CLI
 
-Add to \`.codex/config.toml\`:
+Add to \`.codex/hooks.json\`:
 
-\`\`\`toml
-[[hooks.PreToolUse]]
-matcher = "*"
-command = "node dist/hooks/codex-handler.js pre-tool-use"
-
-[[hooks.PostToolUse]]
-matcher = "*"
-command = "node dist/hooks/codex-handler.js post-tool-use"
-
-[[hooks.Stop]]
-matcher = ""
-command = "node dist/hooks/codex-handler.js stop"
+\`\`\`json
+{
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matcher": "*",
+      "command": "node dist/hooks/codex-handler.js pre-tool-use"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "*",
+      "command": "node dist/hooks/codex-handler.js post-tool-use"
+    },
+    {
+      "event": "Stop",
+      "matcher": "",
+      "command": "node dist/hooks/codex-handler.js stop"
+    }
+  ]
+}
 \`\`\`
 
 #### Trae

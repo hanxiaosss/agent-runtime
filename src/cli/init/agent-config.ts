@@ -18,26 +18,28 @@ export interface AgentConfig {
  * Build the Codex hooks.json content.
  * Codex CLI loads hooks from .codex/hooks.json (not config.toml).
  * See: https://github.com/openai/codex/issues/17532
+ *
+ * Uses the current-format schema with a top-level `hooks` array
+ * where each entry has an `event` field (PreToolUse / PostToolUse / Stop).
  */
 function buildCodexHooksJson(): string {
   const handlerPath = "dist/hooks/codex-handler.js";
   const config = {
-    PreToolUse: [
+    hooks: [
       {
+        event: "PreToolUse",
         matcher: "*",
-        hooks: [{ type: "command", command: `node ${handlerPath} pre-tool-use` }],
+        command: `node ${handlerPath} pre-tool-use`,
       },
-    ],
-    PostToolUse: [
       {
+        event: "PostToolUse",
         matcher: "*",
-        hooks: [{ type: "command", command: `node ${handlerPath} post-tool-use` }],
+        command: `node ${handlerPath} post-tool-use`,
       },
-    ],
-    Stop: [
       {
+        event: "Stop",
         matcher: "",
-        hooks: [{ type: "command", command: `node ${handlerPath} stop` }],
+        command: `node ${handlerPath} stop`,
       },
     ],
   };

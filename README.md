@@ -56,14 +56,14 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 | -------------- | ----------- | -------------------------- | ---------------------------------------------------------------------- | --------- |
 | Claude Code    | ✅ 完整支持 | `.claude/settings.json`    | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用   |
 | Qoder          | ✅ 完整支持 | `.qoder/settings.json`     | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用   |
-| Codex CLI      | ✅ 完整支持 | `.codex/hooks.json`        | `{ description, hooks: { matcher, PreToolUse: [{ command }] } }`       | ✅ 可用   |
+| Codex CLI      | ✅ 完整支持 | `.codex/hooks.json`        | `{ hooks: [{ event, matcher, command }] }`                               | ✅ 可用   |
 | GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | `{ version: 1, hooks: { preToolUse: [{ type, bash, powershell }] } }`  | ✅ 可用   |
 | Cursor         | ⚠️ 待验证   | `.cursor/hooks.json`       | `{ hooks: { PreToolUse: [{ command }] } }`                             | ⚠️ 待验证 |
 | Trae           | ⚠️ 待验证   | `.trae/settings.json`      | `{ hooks: { PreToolUse: [{ command }] } }`                             | ⚠️ 实验性 |
 
 **重要说明**：
 
-- **Codex CLI** 的 `hooks.json` 格式要求顶层包含 `description` 和 `hooks` 字段，`hooks` 内部需包含 `matcher` 和各事件（`PreToolUse`/`PostToolUse` 等）
+- **Codex CLI** 的 `hooks.json` 格式要求顶层包含 `hooks` 数组，每个钩子通过 `event` 字段指定事件类型（`PreToolUse`/`PostToolUse`/`Stop`），并配置 `matcher` 和 `command`
 - **GitHub Copilot** 使用 `preToolUse`（小驼峰）而非 `PreToolUse`，且需指定 `version: 1` 和平台命令（`bash`/`powershell`）
 - ⚠️ **Cursor Agent** 目前**可能不支持** hooks（配置了但 agent 没有调用）
 - 如果你在 Cursor 中使用 Agent Mode 且 hook 没有触发，请参考诊断指南
