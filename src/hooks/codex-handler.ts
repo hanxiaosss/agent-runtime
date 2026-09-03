@@ -13,11 +13,11 @@
  *
  * Configuration: .codex/hooks.json
  *   {
- *     "hooks": [
- *       { "event": "PreToolUse", "matcher": "*", "command": "node dist/hooks/codex-handler.js pre-tool-use" },
- *       { "event": "PostToolUse", "matcher": "*", "command": "node dist/hooks/codex-handler.js post-tool-use" },
- *       { "event": "Stop", "matcher": "", "command": "node dist/hooks/codex-handler.js stop" }
- *     ]
+ *     "hooks": {
+ *       "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node dist/hooks/codex-handler.js pre-tool-use" }] }],
+ *       "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "node dist/hooks/codex-handler.js post-tool-use" }] }],
+ *       "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node dist/hooks/codex-handler.js stop" }] }]
+ *     }
  *   }
  */
 
