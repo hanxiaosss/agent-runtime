@@ -20,14 +20,16 @@
   },
   "files": [
     "dist",
-    "doc"
+    "doc",
+    "scripts"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "demo": "tsx src/demo.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [
     "agent",

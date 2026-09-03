@@ -641,7 +641,15 @@ function buildEvents(input, phase) {
   return events;
 }
 
-// ─── Trace Writer ───────────────────────────────────────────────────
+// ─── Session ID ────────────────────────────────────────────────────
+
+function getSessionId() {
+  // Stable per agent-run: project root + parent PID
+  const shortHash = PROJECT_ROOT.split(path.sep).slice(-2).join('/') + '#ppid' + process.ppid;
+  return shortHash;
+}
+
+// ── Trace Writer ───────────────────────────────────────────────────
 
 function writeTrace(eventName, payload, action, feedback) {
   try {
@@ -657,6 +665,7 @@ function writeTrace(eventName, payload, action, feedback) {
       event: eventName,
       source: "hannah",
       action: action,
+      sessionId: getSessionId(),
       payload: payload,
       feedback: feedback ? [feedback] : [],
     };
@@ -1074,7 +1083,8 @@ async function main() {
   // This is zero-cost, zero-latency, no API key needed
   
   if (finalDecision !== "deny" && phase === "before") {
-    const reflectionRules = semanticRules.filter(r => r.reflection_prompt);
+    const allSemanticRules = BUILT_IN_RULES.concat(loadSemanticRulesYAML());
+  const reflectionRules = allSemanticRules.filter(r => r.reflection_prompt);
     
     for (const rule of reflectionRules) {
       // Check if rule matches
@@ -1123,8 +1133,15 @@ async function main() {
       output.suggestions = finalSuggestions;
     }
 
+    // Write JSON to stdout for agents that parse it (Claude Code, Codex)
     process.stdout.write(JSON.stringify(output));
-    process.exit(finalDecision === "deny" ? 2 : 0);
+
+    // Also write deny feedback to stderr — Copilot VSCode reads stderr for deny signals
+    if (finalDecision === "deny" && finalFeedback) {
+      process.stderr.write("[HOOK_DENY] " + finalFeedback + "\\n");
+    }
+
+    process.exit(finalDecision === "deny" ? 1 : 0);
   } else {
     // post-tool-use: observation only
     writeTrace("tool.after", { toolName }, "allow", "");

@@ -36,6 +36,19 @@ const PROTECTED_FILES = [
   '.harness/config.yaml',
 ];
 
+const PROTECTED_PATTERNS = [
+  '.env',
+  '.env.*',
+  '*.env',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'poetry.lock',
+  'Gemfile.lock',
+  'Cargo.lock',
+  'go.sum',
+];
+
 const PROTECTED_DIRS = [
   '.harness/policies',
   '.harness/hooks',
@@ -160,10 +173,22 @@ function writeTrace(event: string, action: string, details: any) {
 
 function isProtectedPath(filePath: string): boolean {
   const relativePath = path.relative(PROJECT_ROOT, filePath);
+  const basename = path.basename(relativePath);
 
   // 精确匹配文件
   for (const protectedFile of PROTECTED_FILES) {
     if (relativePath === protectedFile) {
+      return true;
+    }
+  }
+
+  // Pattern 匹配（.env、lock files 等）
+  for (const pattern of PROTECTED_PATTERNS) {
+    if (matchGlob(basename, pattern)) {
+      return true;
+    }
+    // 也匹配嵌套路径中的文件名（如 config/.env）
+    if (matchGlob(relativePath, '**/' + pattern)) {
       return true;
     }
   }
@@ -182,6 +207,20 @@ function isProtectedPath(filePath: string): boolean {
   return false;
 }
 
+/**
+ * Simple glob matcher for filename patterns.
+ * Supports: * (any chars except /), ? (single char), ** (any path depth)
+ */
+function matchGlob(value: string, pattern: string): boolean {
+  const regexStr = '^' + pattern
+    .replace(/\./g, '\\.')
+    .replace(/\*\*/g, '{{GLOBSTAR}}')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\{\{GLOBSTAR\}\}/g, '.*') + '$';
+  return new RegExp(regexStr, 'i').test(value);
+}
+
 function isInCooldown(filePath: string): boolean {
   const now = Date.now();
   const lastTime = lastProcessed.get(filePath) || 0;
@@ -195,11 +234,24 @@ function markProcessed(filePath: string) {
 // ─── 扫描并备份所有受保护文件 ─────────────────────────────────────
 
 function backupAllProtected() {
-  // 备份文件
+  // 备份精确匹配的文件
   for (const protectedFile of PROTECTED_FILES) {
     const fullPath = path.join(PROJECT_ROOT, protectedFile);
     if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
       backupFile(fullPath);
+    }
+  }
+
+  // 扫描并备份 pattern 匹配的文件（.env、lock files 等）
+  const allFiles = scanProjectFiles(PROJECT_ROOT);
+  for (const filePath of allFiles) {
+    const relativePath = path.relative(PROJECT_ROOT, filePath);
+    const basename = path.basename(relativePath);
+    for (const pattern of PROTECTED_PATTERNS) {
+      if (matchGlob(basename, pattern) || matchGlob(relativePath, '**/' + pattern)) {
+        backupFile(filePath);
+        break;
+      }
     }
   }
 
@@ -216,6 +268,35 @@ function backupAllProtected() {
       }
     }
   }
+}
+
+/**
+ * Recursively scan project directory for files, skipping node_modules etc.
+ */
+function scanProjectFiles(root: string): string[] {
+  const results: string[] = [];
+  const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.backups']);
+
+  function walk(dir: string) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) {
+          walk(path.join(dir, entry.name));
+        }
+      } else if (entry.isFile()) {
+        results.push(path.join(dir, entry.name));
+      }
+    }
+  }
+
+  walk(root);
+  return results;
 }
 
 // ─── 处理文件变更 ─────────────────────────────────────────────────
@@ -270,6 +351,7 @@ function createWatcher() {
   console.error('[watcher] Starting file system watcher...');
   console.error('[watcher] Project root:', PROJECT_ROOT);
   console.error('[watcher] Protected files:', PROTECTED_FILES.join(', '));
+  console.error('[watcher] Protected patterns:', PROTECTED_PATTERNS.join(', '));
   console.error('[watcher] Protected dirs:', PROTECTED_DIRS.join(', '));
   console.error('');
 

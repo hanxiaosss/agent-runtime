@@ -110,6 +110,7 @@ function handleSessions(res: http.ServerResponse, tracesDir: string): void {
 
   const sessions = Array.from(sessionMap.entries()).map(([id, data]) => ({
     id,
+    name: id.includes('#') ? id.split('#')[0] : id,
     eventCount: data.count,
     lastSeen: data.lastSeen,
     sources: Array.from(data.sources),
@@ -289,7 +290,7 @@ function getDashboardHTML(): string {
     <h2>Active Sessions</h2>
     <table>
       <thead>
-        <tr><th>Session ID</th><th>Events</th><th>Sources</th><th>Last Active</th></tr>
+        <tr><th>Session</th><th>Events</th><th>Sources</th><th>Last Active</th></tr>
       </thead>
       <tbody id="sessions-table"></tbody>
     </table>
@@ -315,7 +316,8 @@ async function loadTraces() {
     const tr = document.createElement('tr');
     const time = new Date(e.timestamp).toLocaleTimeString();
     const badge = '<span class="badge ' + (e.action || 'allow') + '">' + (e.action || 'allow').toUpperCase() + '</span>';
-    tr.innerHTML = '<td>' + time + '</td><td>' + badge + '</td><td>' + (e.event || '-') + '</td><td>' + (e.source || '-') + '</td><td>' + (e.toolName || '-') + '</td>';
+    const toolName = e.payload?.toolName || e.toolName || '-';
+    tr.innerHTML = '<td>' + time + '</td><td>' + badge + '</td><td>' + (e.event || '-') + '</td><td>' + (e.source || '-') + '</td><td>' + toolName + '</td>';
     tbody.appendChild(tr);
   }
 }
@@ -328,7 +330,7 @@ async function loadSessions() {
   for (const s of data.sessions) {
     const tr = document.createElement('tr');
     const time = new Date(s.lastSeen).toLocaleTimeString();
-    tr.innerHTML = '<td>' + s.id + '</td><td>' + s.eventCount + '</td><td>' + s.sources.join(', ') + '</td><td>' + time + '</td>';
+    tr.innerHTML = '<td>' + (s.name || s.id) + '</td><td>' + s.eventCount + '</td><td>' + s.sources.join(', ') + '</td><td>' + time + '</td>';
     tbody.appendChild(tr);
   }
 }
