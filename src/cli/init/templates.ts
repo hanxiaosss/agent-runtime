@@ -657,11 +657,34 @@ function saveSessionTitle(title) {
     const metadataDir = path.join(HARNESS_DIR, "sessions");
     fs.mkdirSync(metadataDir, { recursive: true });
     const metadataFile = path.join(metadataDir, sessionId.replace(/[^a-zA-Z0-9_-]/g, '_') + ".json");
-    const metadata = {
-      sessionId,
-      title: title.substring(0, 100), // Truncate long titles
+    
+    // Load existing metadata or create new
+    let metadata;
+    if (fs.existsSync(metadataFile)) {
+      metadata = JSON.parse(fs.readFileSync(metadataFile, "utf-8"));
+    } else {
+      metadata = {
+        sessionId,
+        title: title.substring(0, 30), // First prompt becomes session title
+        rounds: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+    
+    // Add new round
+    const roundTitle = title.substring(0, 30); // First 30 chars as round title
+    metadata.rounds.push({
+      title: roundTitle,
       timestamp: new Date().toISOString(),
-    };
+      roundId: sessionId + "#round" + (metadata.rounds.length + 1),
+    });
+    
+    // Keep only last 100 rounds to avoid file bloat
+    if (metadata.rounds.length > 100) {
+      metadata.rounds = metadata.rounds.slice(-100);
+    }
+    
+    metadata.lastActive = new Date().toISOString();
     fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2), "utf-8");
     debug("Session metadata saved:", metadataFile);
   } catch (err) {

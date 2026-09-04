@@ -105,7 +105,8 @@ function handleTraces(res: http.ServerResponse, tracesDir: string): void {
 
 function handleStats(res: http.ServerResponse, tracesDir: string): void {
   const entries = loadRecentTraces(tracesDir, 10000);
-  const rounds = detectRounds(entries);
+  const metadata = loadSessionMetadata(tracesDir);
+  const rounds = detectRounds(entries, metadata);
   const stats = {
     totalEvents: entries.length,
     deniedEvents: entries.filter((e: TraceEntry) => e.action === "deny").length,
@@ -126,11 +127,23 @@ function handleStats(res: http.ServerResponse, tracesDir: string): void {
 
 function handleSessions(res: http.ServerResponse, tracesDir: string): void {
   const entries = loadRecentTraces(tracesDir, 10000);
+  const metadata = loadSessionMetadata(tracesDir);
+  const allRounds = detectRounds(entries, metadata);
+
+  // Group rounds by session
+  const roundsBySession = new Map<string, RoundInfo[]>();
+  for (const r of allRounds) {
+    if (!roundsBySession.has(r.sessionId)) {
+      roundsBySession.set(r.sessionId, []);
+    }
+    roundsBySession.get(r.sessionId)!.push(r);
+  }
+
+  // Build session map from traces
   const sessionMap = new Map<
     string,
     { count: number; lastSeen: string; sources: Set<string> }
   >();
-
   for (const e of entries) {
     const sid = e.sessionId || "unknown";
     if (!sessionMap.has(sid)) {
@@ -146,37 +159,26 @@ function handleSessions(res: http.ServerResponse, tracesDir: string): void {
     if (e.source) s.sources.add(e.source);
   }
 
-  // Load session metadata (titles)
-  const sessionTitles = new Map<string, string>();
-  const harnessDir = path.dirname(tracesDir);
-  const sessionsDir = path.join(harnessDir, "sessions");
-  try {
-    if (fs.existsSync(sessionsDir)) {
-      const files = fs
-        .readdirSync(sessionsDir)
-        .filter((f) => f.endsWith(".json"));
-      for (const file of files) {
-        try {
-          const content = fs.readFileSync(
-            path.join(sessionsDir, file),
-            "utf-8",
-          );
-          const metadata = JSON.parse(content);
-          if (metadata.sessionId && metadata.title) {
-            sessionTitles.set(metadata.sessionId, metadata.title);
-          }
-        } catch {}
-      }
-    }
-  } catch {}
+  const sessions: SessionInfo[] = Array.from(sessionMap.entries()).map(
+    ([id, data]) => {
+      const meta = metadata.get(id);
+      const name = meta?.title || (id.includes("#") ? id.split("#")[0] : id);
+      const rounds = (roundsBySession.get(id) || []).sort((a, b) =>
+        b.endTime.localeCompare(a.endTime),
+      );
+      return {
+        id,
+        name,
+        eventCount: data.count,
+        lastSeen: data.lastSeen,
+        sources: Array.from(data.sources),
+        rounds,
+      };
+    },
+  );
 
-  const sessions = Array.from(sessionMap.entries()).map(([id, data]) => ({
-    id,
-    name: sessionTitles.get(id) || (id.includes("#") ? id.split("#")[0] : id),
-    eventCount: data.count,
-    lastSeen: data.lastSeen,
-    sources: Array.from(data.sources),
-  }));
+  // Sort by lastSeen descending
+  sessions.sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
 
   res.writeHead(200, {
     "Content-Type": "application/json",
@@ -193,6 +195,7 @@ interface RoundInfo {
   sessionId: string;
   sessionName: string;
   roundNumber: number;
+  title: string;
   startTime: string;
   endTime: string;
   duration: number;
@@ -202,11 +205,49 @@ interface RoundInfo {
   allowedCount: number;
 }
 
+interface SessionInfo {
+  id: string;
+  name: string;
+  eventCount: number;
+  lastSeen: string;
+  sources: string[];
+  rounds: RoundInfo[];
+}
+
 /**
  * Detect rounds from trace entries.
  * Groups by sessionId, then within each session splits by time gaps.
  */
-function detectRounds(entries: TraceEntry[]): RoundInfo[] {
+function loadSessionMetadata(tracesDir: string): Map<string, any> {
+  const metadata = new Map<string, any>();
+  const harnessDir = path.dirname(tracesDir);
+  const sessionsDir = path.join(harnessDir, "sessions");
+  try {
+    if (fs.existsSync(sessionsDir)) {
+      const files = fs
+        .readdirSync(sessionsDir)
+        .filter((f) => f.endsWith(".json"));
+      for (const file of files) {
+        try {
+          const content = fs.readFileSync(
+            path.join(sessionsDir, file),
+            "utf-8",
+          );
+          const data = JSON.parse(content);
+          if (data.sessionId) {
+            metadata.set(data.sessionId, data);
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return metadata;
+}
+
+function detectRounds(
+  entries: TraceEntry[],
+  sessionMetadata?: Map<string, any>,
+): RoundInfo[] {
   const sessionMap = new Map<string, TraceEntry[]>();
   for (const e of entries) {
     const sid = e.sessionId || "unknown";
@@ -218,6 +259,9 @@ function detectRounds(entries: TraceEntry[]): RoundInfo[] {
 
   for (const [sessionId, sessionEntries] of sessionMap) {
     sessionEntries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    const meta = sessionMetadata?.get(sessionId);
+    const metaRounds: any[] = meta?.rounds || [];
 
     let roundStart = 0;
     let roundNumber = 1;
@@ -246,15 +290,20 @@ function detectRounds(entries: TraceEntry[]): RoundInfo[] {
           else allowedCount++;
         }
 
-        const sessionName = sessionId.includes("#")
-          ? sessionId.split("#")[0]
-          : sessionId;
+        const sessionName =
+          meta?.title ||
+          (sessionId.includes("#") ? sessionId.split("#")[0] : sessionId);
+
+        // Get round title from metadata (1-indexed to match roundNumber)
+        const metaRound = metaRounds[roundNumber - 1];
+        const title = metaRound?.title || `Round ${roundNumber}`;
 
         rounds.push({
           roundId: `${sessionId}#round${roundNumber}`,
           sessionId,
           sessionName,
           roundNumber,
+          title,
           startTime,
           endTime,
           duration,
@@ -277,7 +326,8 @@ function detectRounds(entries: TraceEntry[]): RoundInfo[] {
 
 function handleRounds(res: http.ServerResponse, tracesDir: string): void {
   const entries = loadRecentTraces(tracesDir, 10000);
-  const rounds = detectRounds(entries);
+  const metadata = loadSessionMetadata(tracesDir);
+  const rounds = detectRounds(entries, metadata);
   res.writeHead(200, {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -415,6 +465,15 @@ function getDashboardHTML(): string {
   table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
   th { text-align: left; padding: 10px 16px; background: #1c2128; font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
   td { padding: 10px 16px; border-top: 1px solid #21262d; font-size: 13px; }
+  tr.session-row { cursor: pointer; background: #161b22; }
+  tr.session-row:hover { background: #1c2128; }
+  tr.session-detail { display: none; }
+  tr.session-detail.open { display: table-row; }
+  tr.session-detail td { padding: 0; background: #0d1117; }
+  .session-content { padding: 0 16px 16px; }
+  .session-content table { border: none; border-radius: 0; background: transparent; }
+  .session-content th { background: #161b22; font-size: 11px; }
+  .session-content td { font-size: 12px; border-top: 1px solid #1c2128; }
   tr.round-row { cursor: pointer; }
   tr.round-row:hover { background: #1c2128; }
   tr.round-detail { display: none; }
@@ -435,10 +494,14 @@ function getDashboardHTML(): string {
   .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3fb950; margin-right: 6px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .time-range { color: #8b949e; font-size: 12px; }
-  .session-tag { color: #58a6ff; font-size: 12px; font-family: monospace; }
-  .round-num { font-weight: 700; color: #c9d1d9; }
+  .session-name { font-weight: 600; color: #e1e4e8; font-size: 14px; }
+  .session-meta { color: #8b949e; font-size: 12px; margin-top: 2px; }
+  .round-title { font-weight: 500; color: #c9d1d9; }
+  .round-num { font-weight: 700; color: #58a6ff; margin-right: 8px; }
   .toggle-arrow { display: inline-block; transition: transform 0.2s; color: #8b949e; margin-right: 6px; }
   .toggle-arrow.open { transform: rotate(90deg); }
+  .rounds-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .rounds-count { background: #30363d; color: #8b949e; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -467,20 +530,10 @@ function getDashboardHTML(): string {
   </div>
 
   <div class="section">
-    <h2>Conversation Rounds</h2>
-    <table>
-      <thead>
-        <tr><th style="width:30px"></th><th>Round</th><th>Session</th><th>Events</th><th>Stats</th><th>Time Range</th></tr>
-      </thead>
-      <tbody id="rounds-table"></tbody>
-    </table>
-  </div>
-
-  <div class="section">
     <h2>Sessions</h2>
     <table>
       <thead>
-        <tr><th>Session</th><th>Events</th><th>Rounds</th><th>Sources</th><th>Last Active</th></tr>
+        <tr><th style="width:30px"></th><th>Session</th><th>Events</th><th>Rounds</th><th>Sources</th><th>Last Active</th></tr>
       </thead>
       <tbody id="sessions-table"></tbody>
     </table>
@@ -507,16 +560,53 @@ async function loadStats() {
   document.getElementById('rounds').textContent = data.rounds;
 }
 
-async function loadRounds() {
-  const res = await fetch('/api/rounds');
+async function loadSessions() {
+  const res = await fetch('/api/sessions');
   const data = await res.json();
-  const tbody = document.getElementById('rounds-table');
+  const tbody = document.getElementById('sessions-table');
   tbody.innerHTML = '';
 
-  for (const r of data.rounds) {
-    // Main round row
+  for (const s of data.sessions) {
+    // Main session row
     const tr = document.createElement('tr');
-    tr.className = 'round-row';
+    tr.className = 'session-row';
+    const time = new Date(s.lastSeen).toLocaleTimeString();
+    const roundCount = s.rounds.length;
+    tr.innerHTML =
+      '<td><span class="toggle-arrow" id="arrow-' + s.id + '">&#9654;</span></td>' +
+      '<td><div class="session-name">' + s.name + '</div><div class="session-meta">' + s.id + '</div></td>' +
+      '<td>' + s.eventCount + '</td>' +
+      '<td><span class="rounds-count">' + roundCount + ' rounds</span></td>' +
+      '<td>' + s.sources.join(', ') + '</td>' +
+      '<td><span class="time-range">' + time + '</span></td>';
+
+    // Detail row (rounds within this session)
+    const detailTr = document.createElement('tr');
+    detailTr.className = 'session-detail';
+    detailTr.id = 'detail-' + s.id;
+    detailTr.innerHTML = '<td colspan="6"><div class="session-content" id="rounds-' + s.id + '">Loading...</div></td>';
+
+    tr.addEventListener('click', function() {
+      const detail = document.getElementById('detail-' + s.id);
+      const arrow = document.getElementById('arrow-' + s.id);
+      const isOpen = detail.classList.contains('open');
+      detail.classList.toggle('open');
+      arrow.classList.toggle('open');
+      if (!isOpen && detail.querySelector('.session-content').textContent === 'Loading...') {
+        loadSessionRounds(s.id, s.rounds);
+      }
+    });
+
+    tbody.appendChild(tr);
+    tbody.appendChild(detailTr);
+  }
+}
+
+async function loadSessionRounds(sessionId, rounds) {
+  const container = document.getElementById('rounds-' + sessionId);
+  let html = '<table><thead><tr><th style="width:30px"></th><th>Round</th><th>Events</th><th>Stats</th><th>Time Range</th></tr></thead><tbody>';
+
+  for (const r of rounds) {
     const startTime = new Date(r.startTime).toLocaleTimeString();
     const endTime = new Date(r.endTime).toLocaleTimeString();
     const statsHtml = '<span class="mini-stats">' +
@@ -524,34 +614,39 @@ async function loadRounds() {
       (r.deniedCount > 0 ? '<span class="mini-denied">' + r.deniedCount + ' denied</span>' : '') +
       (r.warnedCount > 0 ? '<span class="mini-warned">' + r.warnedCount + ' warned</span>' : '') +
       '</span>';
-    tr.innerHTML =
+
+    html += '<tr class="round-row" data-round-id="' + r.roundId + '">' +
       '<td><span class="toggle-arrow" id="arrow-' + r.roundId + '">&#9654;</span></td>' +
-      '<td><span class="round-num">#' + r.roundNumber + '</span></td>' +
-      '<td><span class="session-tag">' + r.sessionName + '</span></td>' +
+      '<td><span class="round-num">#' + r.roundNumber + '</span><span class="round-title">' + r.title + '</span></td>' +
       '<td>' + r.eventCount + '</td>' +
       '<td>' + statsHtml + '</td>' +
-      '<td><span class="time-range">' + startTime + ' → ' + endTime + ' (' + formatDuration(r.duration) + ')</span></td>';
+      '<td><span class="time-range">' + startTime + ' → ' + endTime + ' (' + formatDuration(r.duration) + ')</span></td>' +
+      '</tr>';
 
-    // Detail row (events within this round)
-    const detailTr = document.createElement('tr');
-    detailTr.className = 'round-detail';
-    detailTr.id = 'detail-' + r.roundId;
-    detailTr.innerHTML = '<td colspan="6"><div class="round-events" id="events-' + r.roundId + '">Loading...</div></td>';
+    html += '<tr class="round-detail" id="detail-' + r.roundId + '">' +
+      '<td colspan="5"><div class="round-events" id="events-' + r.roundId + '">Loading...</div></td>' +
+      '</tr>';
+  }
 
-    tr.addEventListener('click', function() {
-      const detail = document.getElementById('detail-' + r.roundId);
-      const arrow = document.getElementById('arrow-' + r.roundId);
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  // Add click handlers for round rows
+  const roundRows = container.querySelectorAll('.round-row');
+  roundRows.forEach(function(row) {
+    row.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const roundId = this.getAttribute('data-round-id');
+      const detail = document.getElementById('detail-' + roundId);
+      const arrow = document.getElementById('arrow-' + roundId);
       const isOpen = detail.classList.contains('open');
       detail.classList.toggle('open');
       arrow.classList.toggle('open');
       if (!isOpen && detail.querySelector('.round-events').textContent === 'Loading...') {
-        loadRoundEvents(r.roundId);
+        loadRoundEvents(roundId);
       }
     });
-
-    tbody.appendChild(tr);
-    tbody.appendChild(detailTr);
-  }
+  });
 }
 
 async function loadRoundEvents(roundId) {
@@ -599,44 +694,19 @@ async function loadRoundEvents(roundId) {
   container.innerHTML = html;
 }
 
-async function loadSessions() {
-  const [sessionsRes, roundsRes] = await Promise.all([
-    fetch('/api/sessions'),
-    fetch('/api/rounds'),
-  ]);
-  const sessionsData = await sessionsRes.json();
-  const roundsData = await roundsRes.json();
 
-  // Count rounds per session
-  const roundsPerSession = {};
-  for (const r of roundsData.rounds) {
-    roundsPerSession[r.sessionId] = (roundsPerSession[r.sessionId] || 0) + 1;
-  }
-
-  const tbody = document.getElementById('sessions-table');
-  tbody.innerHTML = '';
-  for (const s of sessionsData.sessions) {
-    const tr = document.createElement('tr');
-    const time = new Date(s.lastSeen).toLocaleTimeString();
-    const roundCount = roundsPerSession[s.id] || 0;
-    tr.innerHTML = '<td><span class="session-tag">' + (s.name || s.id) + '</span></td><td>' + s.eventCount + '</td><td>' + roundCount + '</td><td>' + s.sources.join(', ') + '</td><td>' + time + '</td>';
-    tbody.appendChild(tr);
-  }
-}
 
 // SSE for live updates
 const evtSource = new EventSource('/events');
 evtSource.addEventListener('trace', function(e) {
   loadStats();
-  loadRounds();
+  loadSessions();
 });
 
 loadStats();
-loadRounds();
 loadSessions();
 setInterval(loadStats, 10000);
-setInterval(loadRounds, 15000);
-setInterval(loadSessions, 30000);
+setInterval(loadSessions, 15000);
 </script>
 </body>
 </html>`;
