@@ -1141,7 +1141,8 @@ async function main() {
       process.stderr.write("[HOOK_DENY] " + finalFeedback + "\\n");
     }
 
-    process.exit(finalDecision === "deny" ? 1 : 0);
+    // Exit code convention: 0=allow, 2=deny (matches HookExecutor and all V1 adapters)
+    process.exit(finalDecision === "deny" ? 2 : 0);
   } else {
     // post-tool-use: observation only
     writeTrace("tool.after", { toolName }, "allow", "");

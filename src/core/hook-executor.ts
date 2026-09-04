@@ -215,12 +215,33 @@ export class HookExecutor {
           } catch {
             resolve({ decision: "allow", reason: stdout.trim() });
           }
-        } else if (code === 2) {
-          // Exit code 2 = deny
-          resolve({
-            decision: "deny",
-            reason: stderr.trim() || "Handler denied action",
-          });
+        } else if (code === 1 || code === 2) {
+          // Exit code 1 or 2 = deny
+          // Different agents use different conventions:
+          // - Claude Code / Qoder / Cursor / Codex: exit 2 = deny
+          // - Copilot / Trae: exit 1 (non-zero) = deny
+          // Try to parse JSON from stdout first (rich decision), fall back to stderr
+          try {
+            if (stdout.trim()) {
+              const result = JSON.parse(stdout);
+              // Ensure decision is "deny" even if JSON says otherwise
+              result.decision = "deny";
+              if (!result.reason && stderr.trim()) {
+                result.reason = stderr.trim();
+              }
+              resolve(result as HookResult);
+            } else {
+              resolve({
+                decision: "deny",
+                reason: stderr.trim() || "Handler denied action",
+              });
+            }
+          } catch {
+            resolve({
+              decision: "deny",
+              reason: stderr.trim() || "Handler denied action",
+            });
+          }
         } else {
           // Other exit codes = error
           reject(new Error(`Handler exit code ${code}: ${stderr}`));
@@ -295,6 +316,28 @@ export class HookExecutor {
             }
           } catch {
             resolve({ decision: "allow", reason: stdout.trim() });
+          }
+        } else if (code === 1 || code === 2) {
+          // Exit code 1 or 2 = deny (same convention as shell handler)
+          try {
+            if (stdout.trim()) {
+              const result = JSON.parse(stdout);
+              result.decision = "deny";
+              if (!result.reason && stderr.trim()) {
+                result.reason = stderr.trim();
+              }
+              resolve(result as HookResult);
+            } else {
+              resolve({
+                decision: "deny",
+                reason: stderr.trim() || "Handler denied action",
+              });
+            }
+          } catch {
+            resolve({
+              decision: "deny",
+              reason: stderr.trim() || "Handler denied action",
+            });
           }
         } else {
           reject(new Error(`Python handler exit code ${code}: ${stderr}`));
