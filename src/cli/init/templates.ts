@@ -649,6 +649,26 @@ function getSessionId() {
   return shortHash;
 }
 
+// ─── Session Metadata ──────────────────────────────────────────────
+
+function saveSessionTitle(title) {
+  try {
+    const sessionId = getSessionId();
+    const metadataDir = path.join(HARNESS_DIR, "sessions");
+    fs.mkdirSync(metadataDir, { recursive: true });
+    const metadataFile = path.join(metadataDir, sessionId.replace(/[^a-zA-Z0-9_-]/g, '_') + ".json");
+    const metadata = {
+      sessionId,
+      title: title.substring(0, 100), // Truncate long titles
+      timestamp: new Date().toISOString(),
+    };
+    fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2), "utf-8");
+    debug("Session metadata saved:", metadataFile);
+  } catch (err) {
+    debug("Failed to save session metadata:", err.message);
+  }
+}
+
 // ── Trace Writer ───────────────────────────────────────────────────
 
 function writeTrace(eventName, payload, action, feedback) {
@@ -938,7 +958,7 @@ function readStdin() {
 async function main() {
   const mode = process.argv[2];
   if (!mode) {
-    console.error("Usage: handler.mjs <pre-tool-use|post-tool-use|stop>");
+    console.error("Usage: handler.mjs <pre-tool-use|post-tool-use|user-prompt-submit|stop>");
     process.exit(1);
   }
 
@@ -958,6 +978,16 @@ async function main() {
     debug("Input:", JSON.stringify(input, null, 2));
   } catch (err) {
     debug("No stdin:", err.message);
+    process.exit(0);
+  }
+
+  // Handle user-prompt-submit mode: capture user message as session title
+  if (mode === "user-prompt-submit") {
+    const userMessage = input.user_message || input.user_prompt || "";
+    if (userMessage) {
+      log("User prompt captured:", userMessage.substring(0, 80) + (userMessage.length > 80 ? "..." : ""));
+      saveSessionTitle(userMessage);
+    }
     process.exit(0);
   }
 

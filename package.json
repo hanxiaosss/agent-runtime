@@ -1,6 +1,6 @@
 {
   "name": "hannah-agent-runtime",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "A cross-agent-runtime unified event and policy layer for observing, constraining, and providing feedback on AI agent behavior.",
   "type": "module",
   "main": "dist/index.js",

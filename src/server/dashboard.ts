@@ -20,7 +20,9 @@ export function runWeb(args: string[]): void {
 
   const tracesDir = findTracesDir();
   if (!tracesDir) {
-    console.error("No traces directory found. Run some agent operations first.");
+    console.error(
+      "No traces directory found. Run some agent operations first.",
+    );
     process.exit(1);
   }
 
@@ -42,6 +44,28 @@ export function runWeb(args: string[]): void {
     } else {
       res.writeHead(404);
       res.end("Not found");
+    }
+  });
+
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error("");
+      console.error(`Error: Port ${port} is already in use.`);
+      console.error("");
+      console.error("Solutions:");
+      console.error(`  1. Use a different port: hannah web --port=${port + 1}`);
+      console.error(`  2. Kill the process using port ${port}:`);
+      if (process.platform === "win32") {
+        console.error(`     netstat -ano | findstr :${port}`);
+        console.error(`     taskkill /PID <pid> /F`);
+      } else {
+        console.error(`     lsof -ti:${port} | xargs kill -9`);
+      }
+      console.error("");
+      process.exit(1);
+    } else {
+      console.error("Server error:", err.message);
+      process.exit(1);
     }
   });
 
@@ -86,8 +110,11 @@ function handleStats(res: http.ServerResponse, tracesDir: string): void {
     totalEvents: entries.length,
     deniedEvents: entries.filter((e: TraceEntry) => e.action === "deny").length,
     warnedEvents: entries.filter((e: TraceEntry) => e.action === "warn").length,
-    allowedEvents: entries.filter((e: TraceEntry) => e.action === "allow").length,
-    sessions: new Set(entries.map((e: TraceEntry) => e.sessionId).filter(Boolean)).size,
+    allowedEvents: entries.filter((e: TraceEntry) => e.action === "allow")
+      .length,
+    sessions: new Set(
+      entries.map((e: TraceEntry) => e.sessionId).filter(Boolean),
+    ).size,
     rounds: rounds.length,
   };
   res.writeHead(200, {
@@ -99,12 +126,19 @@ function handleStats(res: http.ServerResponse, tracesDir: string): void {
 
 function handleSessions(res: http.ServerResponse, tracesDir: string): void {
   const entries = loadRecentTraces(tracesDir, 10000);
-  const sessionMap = new Map<string, { count: number; lastSeen: string; sources: Set<string> }>();
+  const sessionMap = new Map<
+    string,
+    { count: number; lastSeen: string; sources: Set<string> }
+  >();
 
   for (const e of entries) {
     const sid = e.sessionId || "unknown";
     if (!sessionMap.has(sid)) {
-      sessionMap.set(sid, { count: 0, lastSeen: e.timestamp, sources: new Set() });
+      sessionMap.set(sid, {
+        count: 0,
+        lastSeen: e.timestamp,
+        sources: new Set(),
+      });
     }
     const s = sessionMap.get(sid)!;
     s.count++;
@@ -112,9 +146,33 @@ function handleSessions(res: http.ServerResponse, tracesDir: string): void {
     if (e.source) s.sources.add(e.source);
   }
 
+  // Load session metadata (titles)
+  const sessionTitles = new Map<string, string>();
+  const harnessDir = path.dirname(tracesDir);
+  const sessionsDir = path.join(harnessDir, "sessions");
+  try {
+    if (fs.existsSync(sessionsDir)) {
+      const files = fs
+        .readdirSync(sessionsDir)
+        .filter((f) => f.endsWith(".json"));
+      for (const file of files) {
+        try {
+          const content = fs.readFileSync(
+            path.join(sessionsDir, file),
+            "utf-8",
+          );
+          const metadata = JSON.parse(content);
+          if (metadata.sessionId && metadata.title) {
+            sessionTitles.set(metadata.sessionId, metadata.title);
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
   const sessions = Array.from(sessionMap.entries()).map(([id, data]) => ({
     id,
-    name: id.includes('#') ? id.split('#')[0] : id,
+    name: sessionTitles.get(id) || (id.includes("#") ? id.split("#")[0] : id),
     eventCount: data.count,
     lastSeen: data.lastSeen,
     sources: Array.from(data.sources),
@@ -165,16 +223,22 @@ function detectRounds(entries: TraceEntry[]): RoundInfo[] {
     let roundNumber = 1;
 
     for (let i = 1; i <= sessionEntries.length; i++) {
-      const isNewRound = i === sessionEntries.length ||
-        new Date(sessionEntries[i].timestamp).getTime() - new Date(sessionEntries[i - 1].timestamp).getTime() > ROUND_GAP_MS;
+      const isNewRound =
+        i === sessionEntries.length ||
+        new Date(sessionEntries[i].timestamp).getTime() -
+          new Date(sessionEntries[i - 1].timestamp).getTime() >
+          ROUND_GAP_MS;
 
       if (isNewRound) {
         const roundEntries = sessionEntries.slice(roundStart, i);
         const startTime = roundEntries[0].timestamp;
         const endTime = roundEntries[roundEntries.length - 1].timestamp;
-        const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+        const duration =
+          new Date(endTime).getTime() - new Date(startTime).getTime();
 
-        let deniedCount = 0, warnedCount = 0, allowedCount = 0;
+        let deniedCount = 0,
+          warnedCount = 0,
+          allowedCount = 0;
         for (const e of roundEntries) {
           const action = (e.action || "allow").toLowerCase();
           if (action === "deny") deniedCount++;
@@ -182,7 +246,9 @@ function detectRounds(entries: TraceEntry[]): RoundInfo[] {
           else allowedCount++;
         }
 
-        const sessionName = sessionId.includes("#") ? sessionId.split("#")[0] : sessionId;
+        const sessionName = sessionId.includes("#")
+          ? sessionId.split("#")[0]
+          : sessionId;
 
         rounds.push({
           roundId: `${sessionId}#round${roundNumber}`,
@@ -248,7 +314,10 @@ function handleSSE(res: http.ServerResponse, tracesDir: string): void {
     fs.closeSync(fd);
     lastSize = stat.size;
 
-    const lines = buffer.toString("utf8").split("\n").filter((l: string) => l.trim());
+    const lines = buffer
+      .toString("utf8")
+      .split("\n")
+      .filter((l: string) => l.trim());
     for (const line of lines) {
       try {
         res.write("event: trace\ndata: " + line + "\n\n");
@@ -297,7 +366,11 @@ function getArgValue(args: string[], flag: string): string | null {
 
 function loadRecentTraces(tracesDir: string, limit: number): TraceEntry[] {
   const entries: TraceEntry[] = [];
-  const files = fs.readdirSync(tracesDir).filter((f) => f.endsWith(".jsonl")).sort().reverse();
+  const files = fs
+    .readdirSync(tracesDir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .sort()
+    .reverse();
 
   for (const file of files) {
     if (entries.length >= limit) break;
@@ -308,7 +381,9 @@ function loadRecentTraces(tracesDir: string, limit: number): TraceEntry[] {
       try {
         entries.push(JSON.parse(line) as TraceEntry);
         if (entries.length >= limit) break;
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
   }
   return entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
