@@ -44,8 +44,8 @@ function printHelp(): void {
       --agent=<name>          Select agent: claude-code, copilot, qoder, codex, trae, cursor
     sync [dir]              Synchronize semantic hooks with project rules
     watch                   Start file system watcher for redline protection
-    trace [options]         View agent runtime traces
-      --all                   Show all entries (default: last 50)
+    trace [options]         View agent runtime traces (latest round by default)
+      --all                   Show all rounds
       --follow                Follow traces in real-time
       --json                  Output raw JSON
       --denied                Only show denied events

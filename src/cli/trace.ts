@@ -4,11 +4,14 @@
  * Reads .harness/traces/*.jsonl and renders a timeline view.
  *
  * Usage:
- *   hannah trace              - show last 50 entries
- *   hannah trace --all        - show all entries
+ *   hannah trace              - show the latest round (one user message cycle)
+ *   hannah trace --all        - show all rounds
  *   hannah trace --follow     - tail -f style
  *   hannah trace --json       - output raw JSON
  *   hannah trace --denied     - only show denied events
+ *
+ * A "round" is one user message cycle — events within the same session
+ * separated by more than ROUND_GAP_MS are considered different rounds.
  */
 
 import * as fs from "node:fs";
@@ -39,6 +42,28 @@ interface TraceEntry {
   modifiedFiles?: string[];
   exitCode?: number;
 }
+
+/**
+ * A "round" represents one user message cycle within a session.
+ * Events within the same session separated by more than ROUND_GAP_MS
+ * are considered to be in different rounds.
+ */
+interface Round {
+  roundId: string;
+  sessionId: string;
+  roundNumber: number;
+  entries: TraceEntry[];
+  startTime: string;
+  endTime: string;
+  duration: number;
+  eventCount: number;
+  deniedCount: number;
+  warnedCount: number;
+  allowedCount: number;
+}
+
+/** Gap threshold in ms — events separated by more than this start a new round. */
+const ROUND_GAP_MS = 30_000;
 
 /** Normalize action value from either format, case-insensitive. */
 function getAction(entry: TraceEntry): string {
@@ -75,6 +100,95 @@ function getFeedback(entry: TraceEntry): string[] {
   return [];
 }
 
+// ---- Round Detection ------------------------------------------------------
+
+/**
+ * Detect rounds from trace entries.
+ * Groups by sessionId, then within each session splits by time gaps.
+ */
+function detectRounds(entries: TraceEntry[], gapMs: number = ROUND_GAP_MS): Round[] {
+  // Group by sessionId
+  const sessionMap = new Map<string, TraceEntry[]>();
+  for (const e of entries) {
+    const sid = e.sessionId || "no-session";
+    if (!sessionMap.has(sid)) sessionMap.set(sid, []);
+    sessionMap.get(sid)!.push(e);
+  }
+
+  const rounds: Round[] = [];
+
+  for (const [sessionId, sessionEntries] of sessionMap) {
+    // Sort by timestamp within session
+    sessionEntries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    let currentRoundEntries: TraceEntry[] = [sessionEntries[0]];
+    let roundNumber = 1;
+
+    for (let i = 1; i < sessionEntries.length; i++) {
+      const prev = sessionEntries[i - 1];
+      const curr = sessionEntries[i];
+      const gap = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
+
+      if (gap > gapMs) {
+        // Finalize current round
+        rounds.push(buildRound(sessionId, roundNumber, currentRoundEntries));
+        roundNumber++;
+        currentRoundEntries = [curr];
+      } else {
+        currentRoundEntries.push(curr);
+      }
+    }
+
+    // Finalize last round
+    if (currentRoundEntries.length > 0) {
+      rounds.push(buildRound(sessionId, roundNumber, currentRoundEntries));
+    }
+  }
+
+  // Sort rounds by endTime (most recent last)
+  rounds.sort((a, b) => a.endTime.localeCompare(b.endTime));
+  return rounds;
+}
+
+function buildRound(sessionId: string, roundNumber: number, entries: TraceEntry[]): Round {
+  const timestamps = entries.map((e) => e.timestamp).sort();
+  const startTime = timestamps[0];
+  const endTime = timestamps[timestamps.length - 1];
+  const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+
+  let deniedCount = 0;
+  let warnedCount = 0;
+  let allowedCount = 0;
+  for (const e of entries) {
+    const action = getAction(e);
+    if (action === "deny") deniedCount++;
+    else if (action === "warn") warnedCount++;
+    else allowedCount++;
+  }
+
+  return {
+    roundId: `${sessionId}#round${roundNumber}`,
+    sessionId,
+    roundNumber,
+    entries,
+    startTime,
+    endTime,
+    duration,
+    eventCount: entries.length,
+    deniedCount,
+    warnedCount,
+    allowedCount,
+  };
+}
+
+/** Get the latest round (most recent by endTime). */
+function getLatestRound(rounds: Round[]): Round | null {
+  if (rounds.length === 0) return null;
+  return rounds.reduce((latest, r) =>
+    r.endTime > latest.endTime ? r : latest
+  , rounds[0]);
+}
+
 export function runTrace(args: string[]): void {
   const harnessDir = findHarnessDir();
   if (!harnessDir) {
@@ -94,7 +208,6 @@ export function runTrace(args: string[]): void {
   const follow = flags.has("--follow");
   const jsonOutput = flags.has("--json");
   const deniedOnly = flags.has("--denied");
-  const limit = showAll ? Infinity : 50;
 
   // Read all .jsonl files
   const entries = readAllTraces(traceDir);
@@ -108,23 +221,43 @@ export function runTrace(args: string[]): void {
   // Sort by timestamp
   filtered.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-  // Limit
-  if (!showAll && filtered.length > limit) {
-    filtered = filtered.slice(-limit);
-  }
-
   if (filtered.length === 0) {
     console.log("No trace entries found.");
     return;
   }
 
-  // Output
-  if (jsonOutput) {
-    console.log(JSON.stringify(filtered, null, 2));
+  // Detect rounds
+  const allRounds = detectRounds(filtered);
+
+  // Select which rounds to display
+  let displayRounds: Round[];
+  if (showAll) {
+    displayRounds = allRounds;
+  } else {
+    // Default: show only the latest round
+    const latest = getLatestRound(allRounds);
+    displayRounds = latest ? [latest] : [];
+  }
+
+  if (displayRounds.length === 0) {
+    console.log("No rounds found.");
     return;
   }
 
-  renderTimeline(filtered, harnessDir);
+  // Collect entries from selected rounds
+  const displayEntries = displayRounds.flatMap((r) => r.entries);
+
+  // Output
+  if (jsonOutput) {
+    if (showAll) {
+      console.log(JSON.stringify({ rounds: displayRounds }, null, 2));
+    } else {
+      console.log(JSON.stringify(displayEntries, null, 2));
+    }
+    return;
+  }
+
+  renderTimelineByRounds(displayRounds, harnessDir, showAll);
 
   // Follow mode
   if (follow) {
@@ -193,54 +326,81 @@ const ARROW = "→"; // →
 /** Dot character for header. */
 const DOT = "●"; // ●
 
-function renderTimeline(entries: TraceEntry[], harnessDir: string): void {
+/** Separator for round headers. */
+const ROUND_SEP = "═"; // ═
+
+/**
+ * Render timeline grouped by rounds.
+ * Each round gets a header showing session, round number, time range, and stats.
+ */
+function renderTimelineByRounds(rounds: Round[], harnessDir: string, showAll: boolean): void {
   const projectName = extractProjectName(harnessDir);
   const sep = "  " + BORDER.repeat(65);
+  const roundSep = "  " + ROUND_SEP.repeat(65);
 
   console.log("");
   console.log(`  Agent Runtime Trace ${DOT} ${projectName}`);
+  if (!showAll) {
+    console.log(`  (showing latest round only — use --all to see all rounds)`);
+  }
   console.log(sep);
-  console.log("");
-  console.log("  Time        Action  Event                    Source         Details");
-  console.log(sep);
 
-  for (const entry of entries) {
-    const time = toLocalTime(entry.timestamp);
-    const action = getAction(entry);
-    const actionDisplay = action.toUpperCase().padEnd(6);
-    const event = entry.event.padEnd(24);
-    const source = (entry.source || "hannah").padEnd(13);
-    const payload = getPayload(entry);
+  let totalEvents = 0;
+  let totalDenied = 0;
+  let totalWarned = 0;
+  let totalAllowed = 0;
 
-    // Build details string from payload
-    const details = buildDetails(payload);
+  for (const round of rounds) {
+    // Round header
+    const sessionShort = round.sessionId.includes("#")
+      ? round.sessionId.split("#").pop()
+      : round.sessionId;
+    const timeRange = `${toLocalTimeShort(round.startTime)} ${ARROW} ${toLocalTimeShort(round.endTime)}`;
+    const stats = `${round.eventCount} events`;
+    const denied = round.deniedCount > 0 ? `, ${round.deniedCount} denied` : "";
 
-    console.log(`  ${time}  ${actionDisplay}  ${event}  ${source}  ${details}`);
+    console.log("");
+    console.log(roundSep);
+    console.log(`  Round #${round.roundNumber} ${DOT} ${sessionShort} ${DOT} ${timeRange} (${formatDuration(round.duration)}, ${stats}${denied})`);
+    console.log(roundSep);
+    console.log("");
+    console.log("  Time        Action  Event                    Source         Details");
+    console.log(sep);
 
-    // Show feedback on separate line if present
-    const feedback = getFeedback(entry);
-    if (feedback.length > 0) {
-      for (const msg of feedback) {
-        console.log(`            ${ARROW} ${msg}`);
+    for (const entry of round.entries) {
+      const time = toLocalTime(entry.timestamp);
+      const action = getAction(entry);
+      const actionDisplay = action.toUpperCase().padEnd(6);
+      const event = entry.event.padEnd(24);
+      const source = (entry.source || "hannah").padEnd(13);
+      const payload = getPayload(entry);
+      const details = buildDetails(payload);
+
+      console.log(`  ${time}  ${actionDisplay}  ${event}  ${source}  ${details}`);
+
+      const feedback = getFeedback(entry);
+      if (feedback.length > 0) {
+        for (const msg of feedback) {
+          console.log(`            ${ARROW} ${msg}`);
+        }
       }
     }
+
+    totalEvents += round.eventCount;
+    totalDenied += round.deniedCount;
+    totalWarned += round.warnedCount;
+    totalAllowed += round.allowedCount;
   }
 
   // Summary
   console.log("");
   console.log(sep);
+  console.log(`  Total: ${totalEvents} | Allowed: ${totalAllowed} | Denied: ${totalDenied} | Warned: ${totalWarned}`);
+  console.log(`  Rounds: ${rounds.length}`);
 
-  const total = entries.length;
-  const denied = entries.filter((e) => getAction(e) === "deny").length;
-  const warned = entries.filter((e) => getAction(e) === "warn").length;
-  const allowed = entries.filter((e) => getAction(e) === "allow").length;
-
-  console.log(`  Total: ${total} | Allowed: ${allowed} | Denied: ${denied} | Warned: ${warned}`);
-
-  // Time range
-  if (entries.length > 1) {
-    const first = entries[0].timestamp;
-    const last = entries[entries.length - 1].timestamp;
+  if (rounds.length > 0) {
+    const first = rounds[0].startTime;
+    const last = rounds[rounds.length - 1].endTime;
     const duration = formatDuration(
       new Date(last).getTime() - new Date(first).getTime(),
     );
