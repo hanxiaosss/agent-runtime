@@ -50,6 +50,12 @@ const AGENT_RESOURCE_MAP: AgentResourceDef[] = [
     mcpConfigFiles: [".cursor/mcp.json"],
     mcpSettingsFiles: [],
   },
+  {
+    agentValue: "antigravity",
+    skillsDirs: [".agents/skills"],
+    mcpConfigFiles: [".agents/mcp.json"],
+    mcpSettingsFiles: [{ path: ".agents/settings.json", field: "mcpServers" }],
+  },
 ];
 
 interface DiscoveredResource {

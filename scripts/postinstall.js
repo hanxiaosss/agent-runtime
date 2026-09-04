@@ -15,5 +15,5 @@ console.log("  ▶ npx hannah init");
 console.log("");
 console.log("  This will create the .harness/ directory and configure");
 console.log("  hooks for your AI coding agent (Claude Code, Codex,");
-console.log("  Qoder, Copilot, Trae, or Cursor).");
+console.log("  Qoder, Copilot, Trae, Cursor, or Antigravity).");
 console.log("");

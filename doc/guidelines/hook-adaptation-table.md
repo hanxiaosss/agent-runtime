@@ -44,23 +44,23 @@ Every agent runtime maps its native hooks into this canonical event set.
 
 ## 2. Runtime Capability Matrix
 
-| Dimension | Claude Code | Qoder | Codex CLI | Copilot | Trae | Cursor |
+| Dimension | Claude Code | Qoder | Codex CLI | Copilot | Trae | Cursor | Antigravity |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Native event count** | 30+ | 26 | ~10 | 8 | 6 | 8 |
-| **Handler types** | command / http / prompt / agent | command / http / prompt / agent | command / mcp_tool | command | command | command |
-| **Input protocol** | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin |
-| **Output protocol** | exit code + JSON stdout | exit code + JSON stdout | exit code only | exit code only | exit code only | exit code + JSON stdout |
-| **Blockable events** | PreToolUse, UserPromptSubmit, Stop | PreToolUse, UserPromptSubmit, PermissionRequest, Stop | PreToolUse, Stop | PreToolUse, UserPromptSubmit | PreToolUse, UserPromptSubmit | PreToolUse, PostToolUse |
+| **Native event count** | 30+ | 26 | ~10 | 8 | 6 | 8 | ~10 |
+| **Handler types** | command / http / prompt / agent | command / http / prompt / agent | command / mcp_tool | command | command | command | command |
+| **Input protocol** | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin | JSON stdin |
+| **Output protocol** | exit code + JSON stdout | exit code + JSON stdout | exit code only | exit code only | exit code only | exit code + JSON stdout | exit code + JSON stdout |
+| **Blockable events** | PreToolUse, UserPromptSubmit, Stop | PreToolUse, UserPromptSubmit, PermissionRequest, Stop | PreToolUse, Stop | PreToolUse, UserPromptSubmit | PreToolUse, UserPromptSubmit | PreToolUse, PostToolUse | PreToolUse, Stop |
 | **Input rewriting** | ✅ `updatedInput` | ✅ `updatedInput` | ❌ | ❌ | ❌ | ✅ `updatedInput` |
 | **Async hooks** | ✅ background | ✅ | ✅ `async: true` | ❌ | ❌ | ❌ |
-| **Conditional matching** | `toolName` pattern | `toolName` pattern | `toolName` pattern | — | — | `toolName` pattern |
+| **Conditional matching** | `toolName` pattern | `toolName` pattern | `toolName` pattern | — | — | `toolName` pattern | `matcher` pattern |
 | **System message injection** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 ---
 
 ## 3. Event → Native Mapping
 
-| Unified Event | Claude Code | Qoder | Codex CLI | Copilot | Trae | Cursor |
+| Unified Event | Claude Code | Qoder | Codex CLI | Copilot | Trae | Cursor | Antigravity |
 |---|---|---|---|---|---|---|
 | `skill.before` | PreToolUse (tool ∈ skill set) | PreToolUse (tool ∈ skill set) | PreToolUse (tool ∈ skill set) | PreToolUse | PreToolUse | PreToolUse |
 | `skill.after` | PostToolUse (tool ∈ skill set) | PostToolUse (tool ∈ skill set) | PostToolUse (tool ∈ skill set) | PostToolUse | PostToolUse | PostToolUse |
@@ -224,6 +224,21 @@ For runtimes that read JSON from stdout (Claude Code, Qoder):
 
 ---
 
+### 5.7 Antigravity
+
+| Property | Value |
+|---|---|
+| **Config location** | `.agents/hooks.json` (project) or `~/.gemini/config/hooks.json` (global) |
+| **Config format** | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` |
+| **Hook events** | PreToolUse, PostToolUse, Stop, PostInvocation |
+| **Handler types** | `command` |
+| **Input** | JSON via stdin |
+| **Output** | JSON to stdout + exit code |
+| **Input rewriting** | ❌ |
+| **Async hooks** | ❌ |
+| **Timeout** | 10s |
+| **Special** | 继承自 Gemini CLI；`Stop` 和 `PostToolUse` 在部分版本可能不触发；`PreToolUse` 是最可靠的事件 |
+
 ## 6. Configuration Schema
 
 Each hook entry in `hooks.config.js` supports:
@@ -248,6 +263,7 @@ interface HookConfig {
     copilot?: string;
     trae?: string;
     cursor?: string;
+    antigravity?: string;
   };
   /** Condition for when this hook fires */
   condition?: {
@@ -257,7 +273,7 @@ interface HookConfig {
     filePattern?: string;
   };
   /** Which runtimes this hook supports (omit = all) */
-  supportedRuntimes?: Array<"claude" | "qoder" | "codex" | "copilot" | "trae" | "cursor">;
+  supportedRuntimes?: Array<"claude" | "qoder" | "codex" | "copilot" | "trae" | "cursor" | "antigravity">;
 }
 ```
 
@@ -273,6 +289,7 @@ interface HookConfig {
 | Copilot | exit 0 | exit 1 + stderr message | — |
 | Trae | exit 0 | exit 1 + stderr message | — |
 | Cursor | exit 0 + `{ "decision": "allow" }` | exit 2 + `{ "decision": "deny", "reason": "..." }` | exit ≠ 0,2 |
+| Antigravity | exit 0 + `{ "decision": "allow" }` | exit 1 + `{ "decision": "deny", "reason": "..." }` | exit ≠ 0,1 |
 
 ---
 
@@ -300,6 +317,7 @@ interface HookConfig {
 | **Codex** | No `prompt`/`agent` handler type | Only `command` + `mcp_tool`; no LLM-driven hook decisions |
 | **Copilot / Trae** | No `updatedInput` (input rewriting) | Can only pass/block; cannot modify tool parameters |
 | **Cursor** | No Stop/SessionEnd hooks | `confirm.before`/`confirm.after` unavailable; no session lifecycle events |
+| **Antigravity** | `Stop`/`PostToolUse` may not fire in some versions | Only `PreToolUse` is reliably supported; use file watcher as fallback |
 | **All** | `task.start` / `task.complete` not natively supported | Emulated via session detection or left unsupported |
 | **All** | `skill.before` / `skill.after` require skill-set configuration | Adapter must be configured with the project's skill tool names |
 

@@ -4,12 +4,12 @@
 
 ## Overview
 
-Hannah Agent Runtime provides a unified control plane for AI coding agents (Claude Code, Codex, Qoder, Copilot, Trae, Cursor). It intercepts agent actions through a standardized hook system, applies declarative policies, and generates observable traces.
+Hannah Agent Runtime provides a unified control plane for AI coding agents (Claude Code, Codex, Qoder, Copilot, Trae, Cursor, Antigravity). It intercepts agent actions through a standardized hook system, applies declarative policies, and generates observable traces.
 
 ### Key Features
 
 - **Universal Event Taxonomy**: 19 canonical event types across 9 categories
-- **6 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae, Cursor
+- **7 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae, Cursor, Antigravity
 - **Declarative Policies**: YAML-based security rules
 - **Semantic Hook System**: Project-level rules extracted from agent.md
 - **Tech Stack Detection**: Automatic hook generation based on your stack
@@ -31,7 +31,7 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 │         ▼                    ▼                    ▼          │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Adapter Layer                           │   │
-│  │  Claude Code │ Codex │ Qoder │ Copilot │ Trae │ Cursor│  │
+│  │  Claude Code │ Codex │ Qoder │ Copilot │ Trae │ Cursor │ Antigravity│  │
 │  └─────────────────────────────────────────────────────┘   │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
@@ -40,7 +40,7 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 ## Features
 
 - **Universal Event Taxonomy**: 19 canonical event types (tool.before, code.before_modify, mcp.before, etc.)
-- **6 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae, Cursor
+- **7 Runtime Adapters**: Claude Code, Codex, Qoder, Copilot, Trae, Cursor, Antigravity
 - **Declarative Policies**: YAML-based security rules
 - **Semantic Hook System**: Project-level rules extracted from agent.md
 - **Tech Stack Detection**: Automatic hook generation based on your stack
@@ -60,11 +60,13 @@ Hannah Agent Runtime provides a unified control plane for AI coding agents (Clau
 | GitHub Copilot | ✅ 完整支持 | `.github/hooks/hooks.json` | `{ version: 1, hooks: { preToolUse: [{ type, bash, powershell }] } }`  | ✅ 可用   |
 | Cursor         | ⚠️ 待验证   | `.cursor/hooks.json`       | `{ hooks: { PreToolUse: [{ command }] } }`                             | ⚠️ 待验证 |
 | Trae           | ⚠️ 待验证   | `.trae/settings.json`      | `{ hooks: { PreToolUse: [{ command }] } }`                             | ⚠️ 实验性 |
+| Antigravity    | ✅ 完整支持 | `.agents/hooks.json`       | `{ hooks: { PreToolUse: [{ matcher, hooks: [{ type, command }] }] } }` | ✅ 可用   |
 
 **重要说明**：
 
 - **Codex CLI** 的 `hooks.json` 顶层为 `{ hooks: { EventName: [{ matcher, hooks: [{ type, command }] }] } }`，事件名作为 key
 - **GitHub Copilot** 使用 `preToolUse`（小驼峰）而非 `PreToolUse`，且需指定 `version: 1` 和平台命令（`bash`/`powershell`）
+- **Antigravity** 使用 `.agents/hooks.json` 配置，支持 `PreToolUse`、`PostToolUse`、`Stop` 事件（部分版本 `Stop`/`PostToolUse` 可能不触发）
 - ⚠️ **Cursor Agent** 目前**可能不支持** hooks（配置了但 agent 没有调用）
 - 如果你在 Cursor 中使用 Agent Mode 且 hook 没有触发，请参考诊断指南
 - 替代方案：使用文件监控器 `node dist/cli/watcher.js` 或其他支持 hooks 的 Agent（如 Claude Code）

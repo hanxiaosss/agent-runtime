@@ -197,4 +197,39 @@ export const AGENTS: AgentConfig[] = [
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     },
   },
+  {
+    name: "Antigravity",
+    value: "antigravity",
+    description: "Google Antigravity (Gemini CLI successor)",
+    configPath: ".agents/hooks.json",
+    hookConfig: `{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-tool-use" }]
+    }],
+    "PostToolUse": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use" }]
+    }],
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs stop" }]
+    }]
+  }
+}`,
+    generateConfig: (projectRoot: string) => {
+      const configDir = path.join(projectRoot, ".agents");
+      const configPath = path.join(configDir, "hooks.json");
+      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      const config = {
+        hooks: {
+          PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use" }] }],
+          PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use" }] }],
+          Stop: [{ matcher: "", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs stop" }] }],
+        },
+      };
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    },
+  },
 ];

@@ -1341,6 +1341,26 @@ Add to \`.trae/settings.json\`:
 }
 \`\`\`
 
+#### Antigravity
+
+Add to \`.agents/hooks.json\`:
+
+\`\`\`json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-tool-use" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs stop" }] }
+    ]
+  }
+}
+\`\`\`
+
 ## Viewing Traces
 
 \`\`\`bash
