@@ -19,6 +19,9 @@
  *   hannah summary --today
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { runInit } from "./cli/init/index.js";
 import { runSync } from "./cli/sync.js";
 import { runTrace } from "./cli/trace.js";
@@ -28,6 +31,29 @@ import { runExport } from "./cli/export.js";
 import { runSession } from "./cli/session.js";
 import { runPolicy } from "./cli/policy.js";
 import { runLearn } from "./cli/learn.js";
+
+// Check for post-install marker and show welcome message
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const markerPath = path.join(__dirname, "..", ".hannah-init-pending");
+
+if (fs.existsSync(markerPath)) {
+  try {
+    fs.unlinkSync(markerPath);
+    console.log("");
+    console.log("  ✨ hannah-agent-runtime installed successfully!");
+    console.log("");
+    console.log("  Next step: initialize your project with");
+    console.log("  ▶ npx hannah init");
+    console.log("");
+    console.log("  This will create the .harness/ directory and configure");
+    console.log("  hooks for your AI coding agent (Claude Code, Codex,");
+    console.log("  Qoder, Copilot, Trae, Cursor, or Antigravity).");
+    console.log("");
+  } catch {
+    // Silently ignore errors
+  }
+}
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -142,21 +168,25 @@ switch (command) {
     break;
 
   case "monitor":
-    import("./server/websocket.js").then((mod) => {
-      mod.runMonitor(args.slice(1));
-    }).catch((err: Error) => {
-      console.error("Error starting monitor:", err.message);
-      process.exit(1);
-    });
+    import("./server/websocket.js")
+      .then((mod) => {
+        mod.runMonitor(args.slice(1));
+      })
+      .catch((err: Error) => {
+        console.error("Error starting monitor:", err.message);
+        process.exit(1);
+      });
     break;
 
   case "web":
-    import("./server/dashboard.js").then((mod) => {
-      mod.runWeb(args.slice(1));
-    }).catch((err: Error) => {
-      console.error("Error starting web UI:", err.message);
-      process.exit(1);
-    });
+    import("./server/dashboard.js")
+      .then((mod) => {
+        mod.runWeb(args.slice(1));
+      })
+      .catch((err: Error) => {
+        console.error("Error starting web UI:", err.message);
+        process.exit(1);
+      });
     break;
 
   case "learn":
