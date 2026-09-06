@@ -14,23 +14,23 @@ import type { EventCapability } from "../core/event.js";
 /**
  * Qoder Hook Adapter V2 实现
  *
- * Qoder 运行时支持 3 个标准 hook 事件：
+ * Qoder 运行时支持 4 个标准 hook 事件：
  * - SessionStart: 会话启动时触发
  * - PermissionRequest: 权限请求时触发
+ * - UserPromptSubmit: 用户提交提示时触发（捕获用户输入文本）
  * - Stop: 会话停止时触发
  *
  * 不支持的 hooks：
  * - PreToolUse
  * - PostToolUse
- * - UserPromptSubmit
  * - PreCompact
  * - PostCompact
  */
 export class QoderAdapterV2 extends HookAdapterV2 {
-  readonly name = "qoder-v2";
+  declare readonly name: string;
 
   /**
-   * Qoder 支持 3 个 hook 事件
+   * Qoder 支持 4 个 hook 事件
    */
   readonly hookCapabilities: HookCapabilities = {
     SessionStart: true,
@@ -38,7 +38,7 @@ export class QoderAdapterV2 extends HookAdapterV2 {
     PermissionRequest: true,
     PostToolUse: false,
     Stop: true,
-    UserPromptSubmit: false,
+    UserPromptSubmit: true,
     PreCompact: false,
     PostCompact: false,
   };

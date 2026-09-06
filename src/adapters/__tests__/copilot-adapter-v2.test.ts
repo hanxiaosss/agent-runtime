@@ -12,19 +12,15 @@ describe("CopilotAdapterV2", () => {
     expect(adapter.name).toBe("copilot-v2");
   });
 
-  it("should support 5 hooks", async () => {
+  it("should support 6 hooks", async () => {
     const supported = await adapter.getSupportedHooks();
-    expect(supported).toHaveLength(5);
+    expect(supported).toHaveLength(6);
     expect(supported).toContain("SessionStart");
     expect(supported).toContain("PreToolUse");
     expect(supported).toContain("PostToolUse");
     expect(supported).toContain("PermissionRequest");
+    expect(supported).toContain("UserPromptSubmit");
     expect(supported).toContain("Stop");
-  });
-
-  it("should not support UserPromptSubmit", async () => {
-    const supported = await adapter.getSupportedHooks();
-    expect(supported).not.toContain("UserPromptSubmit");
   });
 
   it("should not support compact hooks", async () => {
@@ -37,7 +33,7 @@ describe("CopilotAdapterV2", () => {
     const health = await adapter.getHealthStatus();
     expect(health.healthy).toBe(true);
     expect(health.version).toBe("2.0.0");
-    expect(health.hooks).toHaveLength(5);
+    expect(health.hooks).toHaveLength(6);
   });
 
   it("should export metrics", async () => {

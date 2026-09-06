@@ -14,23 +14,23 @@ import type { EventCapability } from "../core/event.js";
 /**
  * Copilot Hook Adapter V2 实现
  *
- * Copilot 运行时支持 5 个标准 hook 事件：
+ * Copilot 运行时支持 6 个标准 hook 事件：
  * - SessionStart: 会话启动时触发
  * - PreToolUse: 工具调用前触发
  * - PostToolUse: 工具调用后触发
  * - PermissionRequest: 权限请求时触发
+ * - UserPromptSubmit: 用户提交提示时触发（捕获用户输入文本）
  * - Stop: 会话停止时触发
  *
  * 不支持的 hooks：
- * - UserPromptSubmit
  * - PreCompact
  * - PostCompact
  */
 export class CopilotAdapterV2 extends HookAdapterV2 {
-  readonly name = "copilot-v2";
+  declare readonly name: string;
 
   /**
-   * Copilot 支持 5 个 hook 事件
+   * Copilot 支持 6 个 hook 事件
    */
   readonly hookCapabilities: HookCapabilities = {
     SessionStart: true,
@@ -38,7 +38,7 @@ export class CopilotAdapterV2 extends HookAdapterV2 {
     PermissionRequest: true,
     PostToolUse: true,
     Stop: true,
-    UserPromptSubmit: false,
+    UserPromptSubmit: true,
     PreCompact: false,
     PostCompact: false,
   };

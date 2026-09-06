@@ -14,7 +14,7 @@ import { HookAdapterV2 } from "./hook-adapter-v2.js";
 import type { EventCapability } from "../core/event.js";
 
 export class CodexAdapterV2 extends HookAdapterV2 {
-  readonly name = "codex-v2";
+  declare readonly name: string;
 
   /**
    * Codex 支持所有 8 个 hook 事件

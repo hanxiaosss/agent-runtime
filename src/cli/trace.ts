@@ -52,6 +52,7 @@ interface Round {
   roundId: string;
   sessionId: string;
   roundNumber: number;
+  title: string;
   entries: TraceEntry[];
   startTime: string;
   endTime: string;
@@ -100,13 +101,49 @@ function getFeedback(entry: TraceEntry): string[] {
   return [];
 }
 
+// ---- Session Metadata -----------------------------------------------------
+
+/**
+ * Load session metadata from .harness/sessions/*.json
+ * Returns a map of sessionId -> metadata
+ */
+function loadSessionMetadata(harnessDir: string): Map<string, any> {
+  const metadata = new Map<string, any>();
+  const sessionsDir = path.join(harnessDir, "sessions");
+  try {
+    if (fs.existsSync(sessionsDir)) {
+      const files = fs
+        .readdirSync(sessionsDir)
+        .filter((f) => f.endsWith(".json"));
+      for (const file of files) {
+        try {
+          const content = fs.readFileSync(
+            path.join(sessionsDir, file),
+            "utf-8",
+          );
+          const data = JSON.parse(content);
+          if (data.sessionId) {
+            metadata.set(data.sessionId, data);
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return metadata;
+}
+
 // ---- Round Detection ------------------------------------------------------
 
 /**
  * Detect rounds from trace entries.
  * Groups by sessionId, then within each session splits by time gaps.
+ * If sessionMetadata is provided, uses round titles from metadata.
  */
-function detectRounds(entries: TraceEntry[], gapMs: number = ROUND_GAP_MS): Round[] {
+function detectRounds(
+  entries: TraceEntry[],
+  gapMs: number = ROUND_GAP_MS,
+  sessionMetadata?: Map<string, any>,
+): Round[] {
   // Group by sessionId
   const sessionMap = new Map<string, TraceEntry[]>();
   for (const e of entries) {
@@ -121,17 +158,25 @@ function detectRounds(entries: TraceEntry[], gapMs: number = ROUND_GAP_MS): Roun
     // Sort by timestamp within session
     sessionEntries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
+    const meta = sessionMetadata?.get(sessionId);
+    const metaRounds: any[] = meta?.rounds || [];
+
     let currentRoundEntries: TraceEntry[] = [sessionEntries[0]];
     let roundNumber = 1;
 
     for (let i = 1; i < sessionEntries.length; i++) {
       const prev = sessionEntries[i - 1];
       const curr = sessionEntries[i];
-      const gap = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
+      const gap =
+        new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
 
       if (gap > gapMs) {
         // Finalize current round
-        rounds.push(buildRound(sessionId, roundNumber, currentRoundEntries));
+        const title =
+          metaRounds[roundNumber - 1]?.title || `Round ${roundNumber}`;
+        rounds.push(
+          buildRound(sessionId, roundNumber, currentRoundEntries, title),
+        );
         roundNumber++;
         currentRoundEntries = [curr];
       } else {
@@ -141,7 +186,11 @@ function detectRounds(entries: TraceEntry[], gapMs: number = ROUND_GAP_MS): Roun
 
     // Finalize last round
     if (currentRoundEntries.length > 0) {
-      rounds.push(buildRound(sessionId, roundNumber, currentRoundEntries));
+      const title =
+        metaRounds[roundNumber - 1]?.title || `Round ${roundNumber}`;
+      rounds.push(
+        buildRound(sessionId, roundNumber, currentRoundEntries, title),
+      );
     }
   }
 
@@ -150,7 +199,12 @@ function detectRounds(entries: TraceEntry[], gapMs: number = ROUND_GAP_MS): Roun
   return rounds;
 }
 
-function buildRound(sessionId: string, roundNumber: number, entries: TraceEntry[]): Round {
+function buildRound(
+  sessionId: string,
+  roundNumber: number,
+  entries: TraceEntry[],
+  title: string,
+): Round {
   const timestamps = entries.map((e) => e.timestamp).sort();
   const startTime = timestamps[0];
   const endTime = timestamps[timestamps.length - 1];
@@ -170,6 +224,7 @@ function buildRound(sessionId: string, roundNumber: number, entries: TraceEntry[
     roundId: `${sessionId}#round${roundNumber}`,
     sessionId,
     roundNumber,
+    title,
     entries,
     startTime,
     endTime,
@@ -184,9 +239,10 @@ function buildRound(sessionId: string, roundNumber: number, entries: TraceEntry[
 /** Get the latest round (most recent by endTime). */
 function getLatestRound(rounds: Round[]): Round | null {
   if (rounds.length === 0) return null;
-  return rounds.reduce((latest, r) =>
-    r.endTime > latest.endTime ? r : latest
-  , rounds[0]);
+  return rounds.reduce(
+    (latest, r) => (r.endTime > latest.endTime ? r : latest),
+    rounds[0],
+  );
 }
 
 export function runTrace(args: string[]): void {
@@ -198,7 +254,9 @@ export function runTrace(args: string[]): void {
 
   const traceDir = path.join(harnessDir, "traces");
   if (!fs.existsSync(traceDir)) {
-    console.log("No traces yet. Traces will appear after agents run with hooks enabled.");
+    console.log(
+      "No traces yet. Traces will appear after agents run with hooks enabled.",
+    );
     return;
   }
 
@@ -226,8 +284,11 @@ export function runTrace(args: string[]): void {
     return;
   }
 
+  // Load session metadata for round titles
+  const sessionMetadata = loadSessionMetadata(harnessDir);
+
   // Detect rounds
-  const allRounds = detectRounds(filtered);
+  const allRounds = detectRounds(filtered, ROUND_GAP_MS, sessionMetadata);
 
   // Select which rounds to display
   let displayRounds: Round[];
@@ -269,7 +330,8 @@ export function runTrace(args: string[]): void {
 // ---- Trace Reading --------------------------------------------------------
 
 function readAllTraces(traceDir: string): TraceEntry[] {
-  const files = fs.readdirSync(traceDir)
+  const files = fs
+    .readdirSync(traceDir)
     .filter((f) => f.endsWith(".jsonl"))
     .sort();
 
@@ -333,7 +395,11 @@ const ROUND_SEP = "═"; // ═
  * Render timeline grouped by rounds.
  * Each round gets a header showing session, round number, time range, and stats.
  */
-function renderTimelineByRounds(rounds: Round[], harnessDir: string, showAll: boolean): void {
+function renderTimelineByRounds(
+  rounds: Round[],
+  harnessDir: string,
+  showAll: boolean,
+): void {
   const projectName = extractProjectName(harnessDir);
   const sep = "  " + BORDER.repeat(65);
   const roundSep = "  " + ROUND_SEP.repeat(65);
@@ -361,10 +427,14 @@ function renderTimelineByRounds(rounds: Round[], harnessDir: string, showAll: bo
 
     console.log("");
     console.log(roundSep);
-    console.log(`  Round #${round.roundNumber} ${DOT} ${sessionShort} ${DOT} ${timeRange} (${formatDuration(round.duration)}, ${stats}${denied})`);
+    console.log(
+      `  Round #${round.roundNumber}: ${round.title} ${DOT} ${sessionShort} ${DOT} ${timeRange} (${formatDuration(round.duration)}, ${stats}${denied})`,
+    );
     console.log(roundSep);
     console.log("");
-    console.log("  Time        Action  Event                    Source         Details");
+    console.log(
+      "  Time        Action  Event                    Source         Details",
+    );
     console.log(sep);
 
     for (const entry of round.entries) {
@@ -376,7 +446,9 @@ function renderTimelineByRounds(rounds: Round[], harnessDir: string, showAll: bo
       const payload = getPayload(entry);
       const details = buildDetails(payload);
 
-      console.log(`  ${time}  ${actionDisplay}  ${event}  ${source}  ${details}`);
+      console.log(
+        `  ${time}  ${actionDisplay}  ${event}  ${source}  ${details}`,
+      );
 
       const feedback = getFeedback(entry);
       if (feedback.length > 0) {
@@ -395,7 +467,9 @@ function renderTimelineByRounds(rounds: Round[], harnessDir: string, showAll: bo
   // Summary
   console.log("");
   console.log(sep);
-  console.log(`  Total: ${totalEvents} | Allowed: ${totalAllowed} | Denied: ${totalDenied} | Warned: ${totalWarned}`);
+  console.log(
+    `  Total: ${totalEvents} | Allowed: ${totalAllowed} | Denied: ${totalDenied} | Warned: ${totalWarned}`,
+  );
   console.log(`  Rounds: ${rounds.length}`);
 
   if (rounds.length > 0) {
@@ -404,7 +478,9 @@ function renderTimelineByRounds(rounds: Round[], harnessDir: string, showAll: bo
     const duration = formatDuration(
       new Date(last).getTime() - new Date(first).getTime(),
     );
-    console.log(`  Range: ${toLocalTimeShort(first)} ${ARROW} ${toLocalTimeShort(last)} (${duration})`);
+    console.log(
+      `  Range: ${toLocalTimeShort(first)} ${ARROW} ${toLocalTimeShort(last)} (${duration})`,
+    );
   }
 
   console.log("");
@@ -447,7 +523,8 @@ function formatDuration(ms: number): string {
 // ---- Follow Mode ----------------------------------------------------------
 
 function followTraces(traceDir: string, startIndex: number): void {
-  const files = fs.readdirSync(traceDir)
+  const files = fs
+    .readdirSync(traceDir)
     .filter((f) => f.endsWith(".jsonl"))
     .sort();
 

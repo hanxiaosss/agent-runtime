@@ -12,7 +12,66 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as http from "node:http";
-import { exec } from "node:child_process";
+import { exec, execSync } from "node:child_process";
+
+/**
+ * Kill the process occupying a given port (cross-platform).
+ * Returns true if a process was killed, false if port was free.
+ */
+function killPortOccupier(port: number): boolean {
+  try {
+    if (process.platform === "win32") {
+      // Windows: find PID via netstat, then taskkill
+      const output = execSync(
+        `netstat -ano | findstr :${port} | findstr LISTENING`,
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+      );
+      const lines = output.trim().split("\n").filter(Boolean);
+      if (lines.length === 0) return false;
+
+      // Extract PID (last column)
+      const pids = new Set<string>();
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        const pid = parts[parts.length - 1];
+        if (pid && pid !== "0") pids.add(pid);
+      }
+
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /PID ${pid} /F`, {
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+          console.log(`  ⚠️  Killed process PID ${pid} occupying port ${port}`);
+        } catch {
+          // Process may have already exited
+        }
+      }
+      return pids.size > 0;
+    } else {
+      // macOS / Linux: lsof to find PID, then kill
+      const output = execSync(`lsof -ti:${port}`, {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const pids = output.trim().split("\n").filter(Boolean);
+      if (pids.length === 0) return false;
+
+      for (const pid of pids) {
+        try {
+          execSync(`kill -9 ${pid}`, { stdio: ["pipe", "pipe", "pipe"] });
+          console.log(`  ⚠️  Killed process PID ${pid} occupying port ${port}`);
+        } catch {
+          // Process may have already exited
+        }
+      }
+      return true;
+    }
+  } catch {
+    // No process found on port — port is free
+    return false;
+  }
+}
 
 export function runWeb(args: string[]): void {
   const port = parseInt(getArgValue(args, "--port") || "4849");
@@ -25,6 +84,10 @@ export function runWeb(args: string[]): void {
     );
     process.exit(1);
   }
+
+  // Kill any process occupying the target port before starting
+  console.log(`  🔍 Checking port ${port}...`);
+  killPortOccupier(port);
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
@@ -95,7 +158,7 @@ function serveDashboard(res: http.ServerResponse): void {
 }
 
 function handleTraces(res: http.ServerResponse, tracesDir: string): void {
-  const entries = loadRecentTraces(tracesDir, 200);
+  const entries = loadRecentTraces(tracesDir, 5000);
   res.writeHead(200, {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -263,6 +326,15 @@ function detectRounds(
     const meta = sessionMetadata?.get(sessionId);
     const metaRounds: any[] = meta?.rounds || [];
 
+    // Build a lookup of metadata rounds by approximate timestamp for title enrichment
+    const metaByTime = new Map<number, any>();
+    for (const mr of metaRounds) {
+      metaByTime.set(new Date(mr.timestamp).getTime(), mr);
+    }
+
+    // ── Primary: time-gap detection ───────────────────────────────
+    // This is robust to missing UserPromptSubmit hooks (e.g. when the
+    // hook previously failed to return a stdout response).
     let roundStart = 0;
     let roundNumber = 1;
 
@@ -277,8 +349,9 @@ function detectRounds(
         const roundEntries = sessionEntries.slice(roundStart, i);
         const startTime = roundEntries[0].timestamp;
         const endTime = roundEntries[roundEntries.length - 1].timestamp;
-        const duration =
-          new Date(endTime).getTime() - new Date(startTime).getTime();
+        const startMs = new Date(startTime).getTime();
+        const endMs = new Date(endTime).getTime();
+        const duration = endMs - startMs;
 
         let deniedCount = 0,
           warnedCount = 0,
@@ -294,9 +367,27 @@ function detectRounds(
           meta?.title ||
           (sessionId.includes("#") ? sessionId.split("#")[0] : sessionId);
 
-        // Get round title from metadata (1-indexed to match roundNumber)
-        const metaRound = metaRounds[roundNumber - 1];
-        const title = metaRound?.title || `Round ${roundNumber}`;
+        // ── Title resolution (priority order) ──────────────────────
+        // 1. prompt.before event within this round (most reliable — real user input)
+        // 2. Metadata round whose timestamp falls within this round's span
+        // 3. Fallback generic title
+        let title = `Round ${roundNumber}`;
+
+        const roundPromptEvents = roundEntries.filter(
+          (e) => e.event === "prompt.before",
+        );
+        if (roundPromptEvents.length > 0) {
+          const msg = roundPromptEvents[0].payload?.userMessage;
+          if (typeof msg === "string" && msg) title = msg.substring(0, 100);
+        } else {
+          // Try to match a metadata round by timestamp
+          for (const [metaTs, mr] of metaByTime) {
+            if (metaTs >= startMs && metaTs <= endMs && mr.title) {
+              title = String(mr.title).substring(0, 100);
+              break;
+            }
+          }
+        }
 
         rounds.push({
           roundId: `${sessionId}#round${roundNumber}`,
@@ -502,6 +593,13 @@ function getDashboardHTML(): string {
   .toggle-arrow.open { transform: rotate(90deg); }
   .rounds-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .rounds-count { background: #30363d; color: #8b949e; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+  .user-input-box { background: #1c2128; border: 1px solid #30363d; border-left: 3px solid #58a6ff; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #e1e4e8; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+  .user-input-box .input-label { font-size: 11px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600; }
+  .user-input-box .input-text { color: #c9d1d9; }
+  tr.prompt-row { background: #161b22; border-left: 3px solid #58a6ff; }
+  tr.prompt-row td { font-size: 12px; }
+  .prompt-text { color: #c9d1d9; font-style: italic; max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .round-title-full { display: block; font-size: 12px; color: #8b949e; font-weight: 400; margin-top: 2px; max-width: 600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -574,7 +672,7 @@ async function loadSessions() {
     const roundCount = s.rounds.length;
     tr.innerHTML =
       '<td><span class="toggle-arrow" id="arrow-' + s.id + '">&#9654;</span></td>' +
-      '<td><div class="session-name">' + s.name + '</div><div class="session-meta">' + s.id + '</div></td>' +
+      '<td><div class="session-name" title="' + escapeHtml(s.name) + '">' + s.name + '</div><div class="session-meta">' + s.id + '</div></td>' +
       '<td>' + s.eventCount + '</td>' +
       '<td><span class="rounds-count">' + roundCount + ' rounds</span></td>' +
       '<td>' + s.sources.join(', ') + '</td>' +
@@ -617,7 +715,9 @@ async function loadSessionRounds(sessionId, rounds) {
 
     html += '<tr class="round-row" data-round-id="' + r.roundId + '">' +
       '<td><span class="toggle-arrow" id="arrow-' + r.roundId + '">&#9654;</span></td>' +
-      '<td><span class="round-num">#' + r.roundNumber + '</span><span class="round-title">' + r.title + '</span></td>' +
+      '<td><span class="round-num">#' + r.roundNumber + '</span><span class="round-title">' + r.title + '</span>' +
+      (r.title.length >= 100 ? '<span class="round-title-full" title="' + escapeHtml(r.title) + '">' + escapeHtml(r.title) + '</span>' : '') +
+      '</td>' +
       '<td>' + r.eventCount + '</td>' +
       '<td>' + statsHtml + '</td>' +
       '<td><span class="time-range">' + startTime + ' → ' + endTime + ' (' + formatDuration(r.duration) + ')</span></td>' +
@@ -643,55 +743,115 @@ async function loadSessionRounds(sessionId, rounds) {
       detail.classList.toggle('open');
       arrow.classList.toggle('open');
       if (!isOpen && detail.querySelector('.round-events').textContent === 'Loading...') {
-        loadRoundEvents(roundId);
+        const round = rounds.find(r => r.roundId === roundId);
+        loadRoundEvents(roundId, round ? round.startTime : null, round ? round.endTime : null);
       }
     });
   });
 }
 
-async function loadRoundEvents(roundId) {
+async function loadRoundEvents(roundId, roundStartTime, roundEndTime) {
   const res = await fetch('/api/traces');
   const data = await res.json();
   const container = document.getElementById('events-' + roundId);
 
-  // Filter entries belonging to this round
+  // Filter entries belonging to this session
   const roundParts = roundId.split('#round');
   const sessionId = roundParts[0];
-  const roundNum = parseInt(roundParts[1]);
 
-  // Reconstruct round boundaries from entries
   const sessionEntries = data.entries
     .filter(e => (e.sessionId || 'unknown') === sessionId)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-  // Detect rounds to find the target round's entries
-  let roundStart = 0;
-  let currentRound = 1;
   let targetEntries = [];
 
-  for (let i = 1; i <= sessionEntries.length; i++) {
-    const isNew = i === sessionEntries.length ||
-      new Date(sessionEntries[i].timestamp).getTime() - new Date(sessionEntries[i-1].timestamp).getTime() > 30000;
-    if (isNew) {
-      if (currentRound === roundNum) {
-        targetEntries = sessionEntries.slice(roundStart, i);
-        break;
+  // Use backend-provided round boundaries when available (authoritative).
+  // Fall back to 30s time-gap heuristic only if boundaries are missing.
+  if (roundStartTime && roundEndTime) {
+    const t0 = new Date(roundStartTime).getTime();
+    const t1 = new Date(roundEndTime).getTime();
+    targetEntries = sessionEntries.filter(e => {
+      const t = new Date(e.timestamp).getTime();
+      return t >= t0 && t <= t1;
+    });
+  } else {
+    const roundNum = parseInt(roundParts[1]);
+    let roundStart = 0;
+    let currentRound = 1;
+    for (let i = 1; i <= sessionEntries.length; i++) {
+      const isNew = i === sessionEntries.length ||
+        new Date(sessionEntries[i].timestamp).getTime() - new Date(sessionEntries[i-1].timestamp).getTime() > 30000;
+      if (isNew) {
+        if (currentRound === roundNum) {
+          targetEntries = sessionEntries.slice(roundStart, i);
+          break;
+        }
+        roundStart = i;
+        currentRound++;
       }
-      roundStart = i;
-      currentRound++;
     }
   }
 
-  let html = '<table><thead><tr><th>Time</th><th>Action</th><th>Event</th><th>Source</th><th>Tool</th></tr></thead><tbody>';
+  // Extract user input from prompt.before events
+  const promptEvents = targetEntries.filter(e => e.event === 'prompt.before');
+  const userInputs = promptEvents
+    .map(e => e.payload?.userMessage || '')
+    .filter(Boolean);
+
+  let html = '';
+
+  // Show user input box at the top
+  if (userInputs.length > 0) {
+    html += '<div class="user-input-box">';
+    html += '<div class="input-label">User Input</div>';
+    for (const input of userInputs) {
+      html += '<div class="input-text">' + escapeHtml(input) + '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '<table><thead><tr><th>Time</th><th>Action</th><th>Event</th><th>Source</th><th>Details</th></tr></thead><tbody>';
   for (const e of targetEntries) {
     const time = new Date(e.timestamp).toLocaleTimeString();
     const action = e.action || 'allow';
     const badge = '<span class="badge ' + action + '">' + action.toUpperCase() + '</span>';
-    const toolName = e.payload?.toolName || e.toolName || '-';
-    html += '<tr><td>' + time + '</td><td>' + badge + '</td><td>' + (e.event || '-') + '</td><td>' + (e.source || '-') + '</td><td>' + toolName + '</td></tr>';
+    const isPrompt = e.event === 'prompt.before';
+    const rowClass = isPrompt ? ' class="prompt-row"' : '';
+
+    let details = '';
+    if (isPrompt) {
+      const msg = e.payload?.userMessage || '';
+      const short = msg.length > 80 ? msg.substring(0, 77) + '...' : msg;
+      details = '<span class="prompt-text" title="' + escapeHtml(msg) + '">' + escapeHtml(short) + '</span>';
+    } else {
+      const toolName = e.payload?.toolName || e.toolName || '-';
+      const filePath = e.payload?.input?.filePath || e.payload?.filePath || '';
+      const cmd = e.payload?.input?.command || '';
+      if (filePath) {
+        const short = filePath.length > 40 ? '...' + filePath.slice(-37) : filePath;
+        details = toolName + ' | ' + short;
+      } else if (cmd) {
+        const short = cmd.length > 40 ? cmd.substring(0, 37) + '...' : cmd;
+        details = toolName + ' | ' + short;
+      } else {
+        details = toolName;
+      }
+    }
+
+    html += '<tr' + rowClass + '><td>' + time + '</td><td>' + badge + '</td><td>' + (e.event || '-') + '</td><td>' + (e.source || '-') + '</td><td>' + details + '</td></tr>';
   }
   html += '</tbody></table>';
   container.innerHTML = html;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 

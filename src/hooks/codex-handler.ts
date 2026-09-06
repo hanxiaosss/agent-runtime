@@ -116,7 +116,7 @@ const SEMANTIC_DIR = path.join(HARNESS_DIR, "semantic-rules");
 async function main(): Promise<void> {
   const phase = process.argv[2]; // "pre-tool-use" | "post-tool-use" | "stop"
   if (!phase) {
-    log("Usage: codex-handler.js <pre-tool-use|post-tool-use|stop>");
+    log("Usage: codex-handler.js <pre-tool-use|post-tool-use|stop|user-prompt-submit>");
     process.exit(1);
   }
 
@@ -177,6 +177,30 @@ async function main(): Promise<void> {
       process.stderr.write((result.feedback || result.reason || "Blocked") + "\n");
       process.exit(2);
     }
+    process.exit(0);
+  }
+
+  if (phase === "user-prompt-submit") {
+    // Capture user input text for dashboard display
+    // Codex may send: prompt, user_message, user_prompt, message, content
+    const userMessage =
+      (input.prompt as string) ||
+      (input as any).user_message ||
+      (input as any).user_prompt ||
+      (input as any).message ||
+      (input as any).content ||
+      "";
+    const sessionId = (input as any).session_id || (input as any).sessionId || null;
+
+    if (userMessage) {
+      log(`[user-prompt-submit] captured: ${userMessage.substring(0, 80)}${userMessage.length > 80 ? "..." : ""}`);
+      // Save session metadata (title + round)
+      saveSessionTitle(userMessage, sessionId);
+      // Write prompt.before trace
+      writePromptTrace(userMessage, sessionId);
+    }
+
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
     process.exit(0);
   }
 
@@ -849,6 +873,76 @@ function sanitizeInput(
     }
   }
   return sanitized;
+}
+
+// ─── Session Metadata (for user-prompt-submit) ────────────────────────────────
+
+function resolveSessionId(agentSessionId: string | null): string {
+  if (agentSessionId) return agentSessionId;
+  // Fallback: generate from project path + timestamp
+  const segments = process.cwd().split(path.sep).slice(-2);
+  return segments.join("/") + "#session" + Date.now();
+}
+
+function saveSessionTitle(title: string, agentSessionId: string | null): void {
+  try {
+    const sessionId = resolveSessionId(agentSessionId);
+    const sessionsDir = path.join(HARNESS_DIR, "sessions");
+    ensureDir(sessionsDir);
+    const safeName = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const metadataFile = path.join(sessionsDir, safeName + ".json");
+
+    let metadata: any;
+    if (fs.existsSync(metadataFile)) {
+      metadata = JSON.parse(fs.readFileSync(metadataFile, "utf-8"));
+    } else {
+      metadata = {
+        sessionId,
+        title: title.substring(0, 100),
+        rounds: [],
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    metadata.rounds.push({
+      title: title.substring(0, 100),
+      timestamp: new Date().toISOString(),
+      roundId: sessionId + "#round" + (metadata.rounds.length + 1),
+    });
+
+    if (metadata.rounds.length > 100) {
+      metadata.rounds = metadata.rounds.slice(-100);
+    }
+    metadata.lastActive = new Date().toISOString();
+    fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2), "utf-8");
+    log(`Session metadata saved: ${metadataFile}`);
+  } catch (err: any) {
+    log(`Failed to save session metadata: ${err.message}`);
+  }
+}
+
+function writePromptTrace(userMessage: string, agentSessionId: string | null): void {
+  const now = new Date();
+  const dateStr = now.toISOString().split("T")[0];
+  const traceFile = path.join(TRACES_DIR, `${dateStr}.jsonl`);
+  const sessionId = resolveSessionId(agentSessionId);
+
+  const entry = {
+    timestamp: now.toISOString(),
+    event: "prompt.before",
+    source: "codex",
+    action: "allow",
+    sessionId,
+    payload: { userMessage, agent: "codex" },
+    feedback: [],
+  };
+
+  try {
+    fs.appendFileSync(traceFile, JSON.stringify(entry) + "\n", "utf-8");
+    log(`Prompt trace written for session: ${sessionId}`);
+  } catch (err: any) {
+    log(`Failed to write prompt trace: ${err.message}`);
+  }
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

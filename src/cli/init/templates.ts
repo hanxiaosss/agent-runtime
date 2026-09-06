@@ -441,6 +441,244 @@ function parseValue(str) {
   return str;
 }
 
+// ─── Syntax Validation ──────────────────────────────────────────────
+
+/**
+ * Get recently modified files from trace history
+ */
+function getRecentlyModifiedFiles(timeWindowMs) {
+  const files = new Set();
+  const now = Date.now();
+  
+  try {
+    // Read recent trace files
+    const traceFiles = fs.readdirSync(TRACE_DIR)
+      .filter(f => f.endsWith(".jsonl"))
+      .sort()
+      .reverse()
+      .slice(0, 3); // Check last 3 days
+    
+    for (const traceFile of traceFiles) {
+      const content = fs.readFileSync(path.join(TRACE_DIR, traceFile), "utf-8");
+      const lines = content.split("\\n").filter(l => l.trim());
+      
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          const entryTime = new Date(entry.timestamp).getTime();
+          
+          // Only look at entries within time window
+          if (now - entryTime > timeWindowMs) continue;
+          
+          // Look for file modification events
+          if (entry.event === "code.after_modify" && entry.payload?.filePath) {
+            files.add(entry.payload.filePath);
+          }
+        } catch {}
+      }
+    }
+  } catch (err) {
+    debug("Failed to read trace history:", err.message);
+  }
+  
+  return Array.from(files);
+}
+
+/**
+ * Run syntax checks on files
+ */
+function runSyntaxChecks(files) {
+  const errors = [];
+  
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    
+    const ext = path.extname(file).toLowerCase();
+    
+    // JavaScript/TypeScript files
+    if (ext === ".js" || ext === ".jsx" || ext === ".ts" || ext === ".tsx" || ext === ".mjs") {
+      const result = checkJavaScriptSyntax(file);
+      if (result.errors.length > 0) {
+        errors.push({ file, errors: result.errors, type: result.type });
+      }
+    }
+    // JSON files
+    else if (ext === ".json") {
+      const result = checkJsonSyntax(file);
+      if (result.errors.length > 0) {
+        errors.push({ file, errors: result.errors, type: "json" });
+      }
+    }
+  }
+  
+  return errors;
+}
+
+/**
+ * Check JavaScript/TypeScript syntax using Node.js parser
+ */
+function checkJavaScriptSyntax(file) {
+  const errors = [];
+  
+  try {
+    const content = fs.readFileSync(file, "utf-8");
+    
+    // Try to parse with Node.js built-in parser
+    // This catches basic syntax errors
+    try {
+      // Use Function constructor to check syntax without executing
+      // Note: This won't catch TypeScript-specific syntax
+      if (file.endsWith(".ts") || file.endsWith(".tsx")) {
+        // For TypeScript, we'll do a basic check
+        // Look for common syntax errors
+        const commonErrors = checkCommonSyntaxErrors(content);
+        if (commonErrors.length > 0) {
+          errors.push(...commonErrors);
+        }
+      } else {
+        // For JavaScript, use Function constructor
+        new Function(content);
+      }
+    } catch (parseErr) {
+      errors.push({
+        line: parseErr.lineNumber || 1,
+        column: parseErr.columnNumber || 1,
+        message: parseErr.message,
+      });
+    }
+    
+    // Try ESLint if available
+    try {
+      const { execSync } = require("node:child_process");
+      const eslintOutput = execSync(
+        \`npx eslint "\${file}" --format json --no-eslintrc --parser-options=ecmaVersion:2022,sourceType:module\`,
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+      );
+      
+      const results = JSON.parse(eslintOutput);
+      if (results && results.length > 0 && results[0].messages) {
+        for (const msg of results[0].messages) {
+          if (msg.severity === 2) { // Error level
+            errors.push({
+              line: msg.line,
+              column: msg.column,
+              message: msg.message,
+              rule: msg.ruleId,
+            });
+          }
+        }
+      }
+    } catch (eslintErr) {
+      // ESLint not available or failed - that's okay
+      debug("ESLint check skipped:", eslintErr.message);
+    }
+    
+  } catch (err) {
+    errors.push({
+      line: 1,
+      column: 1,
+      message: "Failed to read file: " + err.message,
+    });
+  }
+  
+  return { errors, type: "javascript" };
+}
+
+/**
+ * Check JSON syntax
+ */
+function checkJsonSyntax(file) {
+  const errors = [];
+  
+  try {
+    const content = fs.readFileSync(file, "utf-8");
+    JSON.parse(content);
+  } catch (err) {
+    errors.push({
+      line: 1,
+      column: 1,
+      message: err.message,
+    });
+  }
+  
+  return { errors, type: "json" };
+}
+
+/**
+ * Check for common syntax errors in TypeScript/JavaScript
+ */
+function checkCommonSyntaxErrors(content) {
+  const errors = [];
+  const lines = content.split("\\n");
+  
+  // Check for unmatched brackets
+  let braceCount = 0;
+  let parenCount = 0;
+  let bracketCount = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip comments
+    if (line.trim().startsWith("//") || line.trim().startsWith("*")) continue;
+    
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      if (char === "{") braceCount++;
+      if (char === "}") braceCount--;
+      if (char === "(") parenCount++;
+      if (char === ")") parenCount--;
+      if (char === "[") bracketCount++;
+      if (char === "]") bracketCount--;
+    }
+  }
+  
+  if (braceCount !== 0) {
+    errors.push({
+      line: lines.length,
+      column: 1,
+      message: \`Unmatched curly braces: \${braceCount > 0 ? "missing " + braceCount + " closing brace(s)" : "extra " + Math.abs(braceCount) + " closing brace(s)"}\`,
+    });
+  }
+  
+  if (parenCount !== 0) {
+    errors.push({
+      line: lines.length,
+      column: 1,
+      message: \`Unmatched parentheses: \${parenCount > 0 ? "missing " + parenCount + " closing paren(s)" : "extra " + Math.abs(parenCount) + " closing paren(s)"}\`,
+    });
+  }
+  
+  if (bracketCount !== 0) {
+    errors.push({
+      line: lines.length,
+      column: 1,
+      message: \`Unmatched square brackets: \${bracketCount > 0 ? "missing " + bracketCount + " closing bracket(s)" : "extra " + Math.abs(bracketCount) + " closing bracket(s)"}\`,
+    });
+  }
+  
+  return errors;
+}
+
+/**
+ * Format syntax errors for display
+ */
+function formatSyntaxErrors(errors) {
+  const lines = [];
+  
+  for (const fileError of errors) {
+    lines.push(\`\\n📄 \${fileError.file}:\`);
+    
+    for (const err of fileError.errors) {
+      const location = \`Line \${err.line}, Col \${err.column}\`;
+      const rule = err.rule ? \` [\${err.rule}]\` : "";
+      lines.push(\`  ❌ \${location}: \${err.message}\${rule}\`);
+    }
+  }
+  
+  return lines.join("\\n");
+}
+
 // ─── Policy Engine ──────────────────────────────────────────────────
 
 function globMatch(pattern, value) {
@@ -669,17 +907,78 @@ function buildEvents(input, phase) {
 
 // ─── Session ID ────────────────────────────────────────────────────
 
-function getSessionId() {
-  // Stable per agent-run: project root + parent PID
-  const shortHash = PROJECT_ROOT.split(path.sep).slice(-2).join('/') + '#ppid' + process.ppid;
+const SESSION_ID_FILE = path.join(HARNESS_DIR, "current-session.json");
+
+function getSessionId(agentSessionId) {
+  // Use agent's session ID if provided
+  if (agentSessionId) {
+    saveCurrentSessionId(agentSessionId);
+    return agentSessionId;
+  }
+  
+  // Try to load from persistent file first
+  try {
+    if (fs.existsSync(SESSION_ID_FILE)) {
+      const content = fs.readFileSync(SESSION_ID_FILE, "utf-8");
+      const data = JSON.parse(content);
+      if (data.sessionId) {
+        return data.sessionId;
+      }
+    }
+  } catch (err) {
+    debug("Failed to load session ID from file:", err.message);
+  }
+  
+  // Try to load the most recent session ID from metadata
+  try {
+    const metadataDir = path.join(HARNESS_DIR, "sessions");
+    if (fs.existsSync(metadataDir)) {
+      const files = fs.readdirSync(metadataDir)
+        .filter(f => f.endsWith(".json"))
+        .map(f => ({
+          name: f,
+          time: fs.statSync(path.join(metadataDir, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time);
+      
+      if (files.length > 0) {
+        const latestFile = files[0].name;
+        const content = fs.readFileSync(path.join(metadataDir, latestFile), "utf-8");
+        const metadata = JSON.parse(content);
+        if (metadata.sessionId) {
+          saveCurrentSessionId(metadata.sessionId);
+          return metadata.sessionId;
+        }
+      }
+    }
+  } catch (err) {
+    debug("Failed to load session ID from metadata:", err.message);
+  }
+  
+  // Fallback: create a new session ID based on timestamp
+  const timestamp = Date.now();
+  const shortHash = PROJECT_ROOT.split(path.sep).slice(-2).join('/') + '#session' + timestamp;
+  saveCurrentSessionId(shortHash);
   return shortHash;
+}
+
+function saveCurrentSessionId(sessionId) {
+  try {
+    fs.mkdirSync(path.dirname(SESSION_ID_FILE), { recursive: true });
+    fs.writeFileSync(SESSION_ID_FILE, JSON.stringify({
+      sessionId,
+      updatedAt: new Date().toISOString()
+    }, null, 2));
+  } catch (err) {
+    debug("Failed to save session ID:", err.message);
+  }
 }
 
 // ─── Session Metadata ──────────────────────────────────────────────
 
-function saveSessionTitle(title) {
+function saveSessionTitle(title, agentSessionId) {
   try {
-    const sessionId = getSessionId();
+    const sessionId = getSessionId(agentSessionId);
     const metadataDir = path.join(HARNESS_DIR, "sessions");
     fs.mkdirSync(metadataDir, { recursive: true });
     const metadataFile = path.join(metadataDir, sessionId.replace(/[^a-zA-Z0-9_-]/g, '_') + ".json");
@@ -691,14 +990,14 @@ function saveSessionTitle(title) {
     } else {
       metadata = {
         sessionId,
-        title: title.substring(0, 30), // First prompt becomes session title
+        title: title.substring(0, 100), // First prompt becomes session title
         rounds: [],
         createdAt: new Date().toISOString(),
       };
     }
     
-    // Add new round
-    const roundTitle = title.substring(0, 30); // First 30 chars as round title
+    // Add new round with user input as title
+    const roundTitle = title.substring(0, 100); // First 100 chars as round title
     metadata.rounds.push({
       title: roundTitle,
       timestamp: new Date().toISOString(),
@@ -720,7 +1019,7 @@ function saveSessionTitle(title) {
 
 // ── Trace Writer ───────────────────────────────────────────────────
 
-function writeTrace(eventName, payload, action, feedback) {
+function writeTrace(eventName, payload, action, feedback, agentSessionId) {
   try {
     fs.mkdirSync(TRACE_DIR, { recursive: true });
     // Use local time for date filename (not UTC)
@@ -734,7 +1033,7 @@ function writeTrace(eventName, payload, action, feedback) {
       event: eventName,
       source: "hannah",
       action: action,
-      sessionId: getSessionId(),
+      sessionId: getSessionId(agentSessionId),
       payload: payload,
       feedback: feedback ? [feedback] : [],
     };
@@ -1032,11 +1331,84 @@ async function main() {
 
   // Handle user-prompt-submit mode: capture user message as session title
   if (mode === "user-prompt-submit") {
-    const userMessage = input.user_message || input.user_prompt || "";
+    // Different agents use different field names for user input:
+    // - Claude Code / Copilot / Qoder / Trae: user_message
+    // - Codex: prompt, user_prompt
+    // - Cursor / Antigravity: message, content
+    // - Generic fallbacks: text, input, user_prompt
+    const userMessage =
+      input.user_message ||
+      input.user_prompt ||
+      input.prompt ||
+      input.message ||
+      input.content ||
+      input.text ||
+      (input.input && typeof input.input === "string" ? input.input : "") ||
+      "";
+    const agentSessionId = input.session_id || input.sessionId || input.session || null;
     if (userMessage) {
       log("User prompt captured:", userMessage.substring(0, 80) + (userMessage.length > 80 ? "..." : ""));
-      saveSessionTitle(userMessage);
+      saveSessionTitle(userMessage, agentSessionId);
+      // Also write a trace for prompt event
+      writeTrace("prompt.before", { userMessage, agent: input.source || input.agent || "unknown" }, "allow", null, agentSessionId);
     }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle stop mode: run syntax checks before allowing stop
+  if (mode === "stop") {
+    log("Stop hook triggered - running syntax validation...");
+    const agentSessionId = input.session_id || input.sessionId || null;
+    
+    // Get recently modified files from trace history (last 5 minutes)
+    const recentFiles = getRecentlyModifiedFiles(5 * 60 * 1000);
+    
+    if (recentFiles.length === 0) {
+      log("No recently modified files found, allowing stop");
+      writeTrace("confirm.before", { check: "syntax", status: "skip" }, "allow", null, agentSessionId);
+      process.stdout.write(JSON.stringify({ decision: "allow" }));
+      process.exit(0);
+    }
+    
+    log("Checking", recentFiles.length, "recently modified files:", recentFiles.join(", "));
+    
+    // Run syntax checks
+    const syntaxErrors = runSyntaxChecks(recentFiles);
+    
+    if (syntaxErrors.length > 0) {
+      log("Syntax errors found:", syntaxErrors.length);
+      const errorMessage = formatSyntaxErrors(syntaxErrors);
+      const feedback = "Syntax errors detected. Please fix before stopping:\\n" + errorMessage;
+      
+      writeTrace("confirm.before", { 
+        check: "syntax", 
+        status: "fail", 
+        errors: syntaxErrors 
+      }, "deny", feedback, agentSessionId);
+      
+      process.stdout.write(JSON.stringify({
+        decision: "deny",
+        reason: "Syntax validation failed",
+        stopReason: feedback,
+        suggestions: [
+          "Fix the syntax errors listed above",
+          "Run your linter/compiler to see detailed error messages",
+          "Check for missing brackets, semicolons, or typos"
+        ]
+      }));
+      process.stderr.write("[HOOK_DENY] " + feedback + "\\n");
+      process.exit(2);
+    }
+    
+    log("All syntax checks passed");
+    writeTrace("confirm.before", { 
+      check: "syntax", 
+      status: "pass",
+      filesChecked: recentFiles.length
+    }, "allow", null, agentSessionId);
+    
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
     process.exit(0);
   }
 

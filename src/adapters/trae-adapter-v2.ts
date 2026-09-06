@@ -14,23 +14,23 @@ import type { EventCapability } from "../core/event.js";
 /**
  * Trae Hook Adapter V2 实现
  *
- * Trae 运行时支持 3 个标准 hook 事件：
+ * Trae 运行时支持 4 个标准 hook 事件：
  * - PreToolUse: 工具调用前触发
  * - PostToolUse: 工具调用后触发
+ * - UserPromptSubmit: 用户提交提示时触发（捕获用户输入文本）
  * - Stop: 会话停止时触发
  *
  * 不支持的 hooks：
  * - SessionStart
  * - PermissionRequest
- * - UserPromptSubmit
  * - PreCompact
  * - PostCompact
  */
 export class TraeAdapterV2 extends HookAdapterV2 {
-  readonly name = "trae-v2";
+  declare readonly name: string;
 
   /**
-   * Trae 支持 3 个 hook 事件
+   * Trae 支持 4 个 hook 事件
    */
   readonly hookCapabilities: HookCapabilities = {
     SessionStart: false,
@@ -38,7 +38,7 @@ export class TraeAdapterV2 extends HookAdapterV2 {
     PermissionRequest: false,
     PostToolUse: true,
     Stop: true,
-    UserPromptSubmit: false,
+    UserPromptSubmit: true,
     PreCompact: false,
     PostCompact: false,
   };

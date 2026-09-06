@@ -27,7 +27,7 @@ import type { EventCapability } from "../core/event.js";
  * - PostCompact
  */
 export class ClaudeCodeAdapterV2 extends HookAdapterV2 {
-  readonly name = "claude-code-v2";
+  declare readonly name: string;
 
   /**
    * Claude Code 支持 6 个 hook 事件

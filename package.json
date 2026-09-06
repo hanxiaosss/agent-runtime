@@ -29,6 +29,8 @@
     "demo": "tsx src/demo.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "web": "node scripts/kill-port.cjs 4849 && node dist/bin.js web",
+    "web:open": "node scripts/kill-port.cjs 4849 && node dist/bin.js web --open",
     "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [

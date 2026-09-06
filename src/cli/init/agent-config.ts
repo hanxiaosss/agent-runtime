@@ -29,13 +29,25 @@ function buildCodexHooksJson(): string {
       PreToolUse: [
         {
           matcher: "*",
-          hooks: [{ type: "command", command: `node ${handlerPath} pre-tool-use` }],
+          hooks: [
+            { type: "command", command: `node ${handlerPath} pre-tool-use` },
+          ],
         },
       ],
       PostToolUse: [
         {
           matcher: "*",
-          hooks: [{ type: "command", command: `node ${handlerPath} post-tool-use` }],
+          hooks: [
+            { type: "command", command: `node ${handlerPath} post-tool-use` },
+          ],
+        },
+      ],
+      UserPromptSubmit: [
+        {
+          matcher: "",
+          hooks: [
+            { type: "command", command: `node ${handlerPath} user-prompt-submit` },
+          ],
         },
       ],
       Stop: [
@@ -70,17 +82,74 @@ export const AGENTS: AgentConfig[] = [
         "type": "command",
         "command": "node .harness/hooks/handler.mjs post-tool-use"
       }]
+    }],
+    "UserPromptSubmit": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node .harness/hooks/handler.mjs user-prompt-submit"
+      }]
+    }],
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node .harness/hooks/handler.mjs stop"
+      }]
     }]
   }
 }`,
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".claude");
       const configPath = path.join(configDir, "settings.json");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const config = {
         hooks: {
-          PreToolUse: [{ matcher: "", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use" }] }],
-          PostToolUse: [{ matcher: "", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use" }] }],
+          PreToolUse: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs pre-tool-use",
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs post-tool-use",
+                },
+              ],
+            },
+          ],
+          UserPromptSubmit: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs user-prompt-submit",
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs stop",
+                },
+              ],
+            },
+          ],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -95,18 +164,47 @@ export const AGENTS: AgentConfig[] = [
   "version": 1,
   "hooks": {
     "preToolUse": [{ "type": "command", "bash": "node .harness/hooks/handler.mjs pre-tool-use", "powershell": "node .harness/hooks/handler.mjs pre-tool-use" }],
-    "postToolUse": [{ "type": "command", "bash": "node .harness/hooks/handler.mjs post-tool-use", "powershell": "node .harness/hooks/handler.mjs post-tool-use" }]
+    "postToolUse": [{ "type": "command", "bash": "node .harness/hooks/handler.mjs post-tool-use", "powershell": "node .harness/hooks/handler.mjs post-tool-use" }],
+    "userPromptSubmit": [{ "type": "command", "bash": "node .harness/hooks/handler.mjs user-prompt-submit", "powershell": "node .harness/hooks/handler.mjs user-prompt-submit" }],
+    "stop": [{ "type": "command", "bash": "node .harness/hooks/handler.mjs stop", "powershell": "node .harness/hooks/handler.mjs stop" }]
   }
 }`,
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".github", "hooks");
       const configPath = path.join(configDir, "hooks.json");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const config = {
         version: 1,
         hooks: {
-          preToolUse: [{ type: "command", bash: "node .harness/hooks/handler.mjs pre-tool-use", powershell: "node .harness/hooks/handler.mjs pre-tool-use" }],
-          postToolUse: [{ type: "command", bash: "node .harness/hooks/handler.mjs post-tool-use", powershell: "node .harness/hooks/handler.mjs post-tool-use" }],
+          preToolUse: [
+            {
+              type: "command",
+              bash: "node .harness/hooks/handler.mjs pre-tool-use",
+              powershell: "node .harness/hooks/handler.mjs pre-tool-use",
+            },
+          ],
+          postToolUse: [
+            {
+              type: "command",
+              bash: "node .harness/hooks/handler.mjs post-tool-use",
+              powershell: "node .harness/hooks/handler.mjs post-tool-use",
+            },
+          ],
+          userPromptSubmit: [
+            {
+              type: "command",
+              bash: "node .harness/hooks/handler.mjs user-prompt-submit",
+              powershell: "node .harness/hooks/handler.mjs user-prompt-submit",
+            },
+          ],
+          stop: [
+            {
+              type: "command",
+              bash: "node .harness/hooks/handler.mjs stop",
+              powershell: "node .harness/hooks/handler.mjs stop",
+            },
+          ],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -120,17 +218,62 @@ export const AGENTS: AgentConfig[] = [
     hookConfig: `{
   "hooks": {
     "PreToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-tool-use" }] }],
-    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use" }] }]
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use" }] }],
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs user-prompt-submit" }] }],
+    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs stop" }] }]
   }
 }`,
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".qoder");
       const configPath = path.join(configDir, "settings.json");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const config = {
         hooks: {
-          PreToolUse: [{ matcher: "", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use" }] }],
-          PostToolUse: [{ matcher: "", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use" }] }],
+          PreToolUse: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs pre-tool-use",
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs post-tool-use",
+                },
+              ],
+            },
+          ],
+          UserPromptSubmit: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs user-prompt-submit",
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs stop",
+                },
+              ],
+            },
+          ],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -144,7 +287,8 @@ export const AGENTS: AgentConfig[] = [
     hookConfig: buildCodexHooksJson(),
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".codex");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const hooksPath = path.join(configDir, "hooks.json");
       fs.writeFileSync(hooksPath, buildCodexHooksJson());
     },
@@ -157,17 +301,30 @@ export const AGENTS: AgentConfig[] = [
     hookConfig: `{
   "hooks": {
     "PreToolUse": [{ "command": "node .harness/hooks/handler.mjs pre-tool-use" }],
-    "PostToolUse": [{ "command": "node .harness/hooks/handler.mjs post-tool-use" }]
+    "PostToolUse": [{ "command": "node .harness/hooks/handler.mjs post-tool-use" }],
+    "UserPromptSubmit": [{ "command": "node .harness/hooks/handler.mjs user-prompt-submit" }],
+    "Stop": [{ "command": "node .harness/hooks/handler.mjs stop" }]
   }
 }`,
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".trae");
       const configPath = path.join(configDir, "settings.json");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const config = {
         hooks: {
-          PreToolUse: [{ command: "node .harness/hooks/handler.mjs pre-tool-use" }],
-          PostToolUse: [{ command: "node .harness/hooks/handler.mjs post-tool-use" }],
+          PreToolUse: [
+            { command: "node .harness/hooks/handler.mjs pre-tool-use" },
+          ],
+          PostToolUse: [
+            { command: "node .harness/hooks/handler.mjs post-tool-use" },
+          ],
+          UserPromptSubmit: [
+            { command: "node .harness/hooks/handler.mjs user-prompt-submit" },
+          ],
+          Stop: [
+            { command: "node .harness/hooks/handler.mjs stop" },
+          ],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -181,17 +338,30 @@ export const AGENTS: AgentConfig[] = [
     hookConfig: `{
   "hooks": {
     "PreToolUse": [{ "command": "node .harness/hooks/handler.mjs pre-tool-use" }],
-    "PostToolUse": [{ "command": "node .harness/hooks/handler.mjs post-tool-use" }]
+    "PostToolUse": [{ "command": "node .harness/hooks/handler.mjs post-tool-use" }],
+    "UserPromptSubmit": [{ "command": "node .harness/hooks/handler.mjs user-prompt-submit" }],
+    "Stop": [{ "command": "node .harness/hooks/handler.mjs stop" }]
   }
 }`,
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".cursor");
       const configPath = path.join(configDir, "hooks.json");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const config = {
         hooks: {
-          PreToolUse: [{ command: "node .harness/hooks/handler.mjs pre-tool-use" }],
-          PostToolUse: [{ command: "node .harness/hooks/handler.mjs post-tool-use" }],
+          PreToolUse: [
+            { command: "node .harness/hooks/handler.mjs pre-tool-use" },
+          ],
+          PostToolUse: [
+            { command: "node .harness/hooks/handler.mjs post-tool-use" },
+          ],
+          UserPromptSubmit: [
+            { command: "node .harness/hooks/handler.mjs user-prompt-submit" },
+          ],
+          Stop: [
+            { command: "node .harness/hooks/handler.mjs stop" },
+          ],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -212,6 +382,10 @@ export const AGENTS: AgentConfig[] = [
       "matcher": "*",
       "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use" }]
     }],
+    "UserPromptSubmit": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs user-prompt-submit" }]
+    }],
     "Stop": [{
       "matcher": "",
       "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs stop" }]
@@ -221,12 +395,54 @@ export const AGENTS: AgentConfig[] = [
     generateConfig: (projectRoot: string) => {
       const configDir = path.join(projectRoot, ".agents");
       const configPath = path.join(configDir, "hooks.json");
-      if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+      if (!fs.existsSync(configDir))
+        fs.mkdirSync(configDir, { recursive: true });
       const config = {
         hooks: {
-          PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use" }] }],
-          PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use" }] }],
-          Stop: [{ matcher: "", hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs stop" }] }],
+          PreToolUse: [
+            {
+              matcher: "*",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs pre-tool-use",
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "*",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs post-tool-use",
+                },
+              ],
+            },
+          ],
+          UserPromptSubmit: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs user-prompt-submit",
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              matcher: "",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .harness/hooks/handler.mjs stop",
+                },
+              ],
+            },
+          ],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
