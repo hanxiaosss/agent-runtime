@@ -31,6 +31,7 @@ import { runExport } from "./cli/export.js";
 import { runSession } from "./cli/session.js";
 import { runPolicy } from "./cli/policy.js";
 import { runLearn } from "./cli/learn.js";
+import { runGitHooks } from "./cli/git-hooks.js";
 
 // Check for post-install marker and show welcome message
 const __filename = fileURLToPath(import.meta.url);
@@ -100,6 +101,12 @@ function printHelp(): void {
     web [options]           Start WebUI Dashboard
       --port=N                Server port (default: 4849)
       --open                  Open browser after start
+    git-hooks [subcommand]  Manage git hook interception
+      install                 Install git hooks to .git/hooks/
+      uninstall               Uninstall git hooks
+      status                  Show current git hooks status
+      run <hook-name>         Manually trigger a hook's callback chain
+      list                    List all configured callbacks
     learn [subcommand]      Self-learning intelligence
       full                  Full analysis (patterns + anomalies + recommendations)
       patterns              Behavior pattern analysis
@@ -191,6 +198,13 @@ switch (command) {
 
   case "learn":
     runLearn(args.slice(1));
+    break;
+
+  case "git-hooks":
+    runGitHooks(args.slice(1)).catch((err) => {
+      console.error("Error:", err.message);
+      process.exit(1);
+    });
     break;
 
   case "help":

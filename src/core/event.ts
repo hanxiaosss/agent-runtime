@@ -43,6 +43,12 @@ export type EventName =
   // Git operations
   | "git.worktree_keep"
   | "git.worktree_undo"
+  // Git hook lifecycle
+  | "git.pre-commit"
+  | "git.post-commit"
+  | "git.pre-push"
+  | "git.post-checkout"
+  | "git.prepare-commit-msg"
   // Agent lifecycle
   | "agent.start"
   | "agent.stop"

@@ -20,6 +20,32 @@ trace:
 # Policy directories to load (relative to .harness/)
 policies:
   - policies
+
+# Git Hook interception and artifact lifecycle management
+# Run 'hannah git-hooks install' to activate
+gitHooks:
+  enabled: false
+  lifecycle:
+    # Artifacts cleared on each git commit (pre-commit)
+    commitScoped:
+      - traces
+      - sessions
+      - hook-logs
+    # Archive before clearing
+    archive:
+      enabled: true
+      dir: .harness/archive
+  hooks:
+    pre-commit:
+      builtin:
+        clearArtifacts: true
+        archiveBeforeClear: true
+      callbacks: []
+    post-commit:
+      builtin:
+        resetDashboard: true
+        logCommit: true
+      callbacks: []
 `;
 
 export const PROTECTED_FILES_YAML = `# Protected Files Policy
