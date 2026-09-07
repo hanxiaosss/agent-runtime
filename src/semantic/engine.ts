@@ -13,18 +13,23 @@
  * │                                   ├── built-in rules         │
  * │                                   ├── agent.md rules         │
  * │                                   └── user YAML rules        │
- * └──────────────────────────────────────────────────────────────┘
+ * └─────────────────────────�/**
+ * Semantic Hook Engine
  *
+ * Orchestrates semantic hooks and integrates with policy engine.
+ *
+ * Architecture overview:
+ * ┌──────────────────────────────────────────────────────────────�? * �? AgentRuntime                                                �? * �?   └── hook pipeline                                         �? * �?         ├── custom hooks (user-registered)                  �? * �?         ├── PolicyEngine (declarative YAML / TS rules)      �? * �?         └── SemanticHookAdapter �?SemanticRuleEngine        �? * �?                                  ├── built-in rules         �? * �?                                  ├── agent.md rules         �? * �?                                  └── user YAML rules        �? * └──────────────────────────────────────────────────────────────�? *
  * The `SemanticHookEngine` class combines:
- *   • `SemanticRuleEngine` — the multi-dimensional matching engine
- *   • Legacy `SemanticHook` interface — for backward compatibility
+ *   �?`SemanticRuleEngine` �?the multi-dimensional matching engine
+ *   �?Legacy `SemanticHook` interface �?for backward compatibility
  *
  * The bridge to the core hook pipeline is `SemanticHookAdapter`,
  * which converts `SemanticRuleEngine` decisions into `HookResult`.
  */
 
 import type { SemanticHook, SemanticContext, SemanticMatch, SemanticDecision, ExtractedRule, TechStack } from './types.js';
-import { generateHookFromRule, generateTechStackHooks, saveHooksToFile } from './hook-generator.js';
+import { generateHookFromRule, generateSemanticRulesFromExtracted, generateTechStackHooks, saveHooksToFile } from './hook-generator.js';
 import { detectTechStack } from './tech-stack-detector.js';
 import { scanProjectRules } from './agent-md-scanner.js';
 import { SemanticRuleEngine, type SemanticRule } from './rule-engine.js';
@@ -35,8 +40,8 @@ import * as path from 'node:path';
  * Semantic hook engine
  *
  * Unified facade that combines:
- *   1. `SemanticRuleEngine` — the multi-dimensional rule matcher
- *   2. Legacy `SemanticHook` interface — per-hook detect/evaluate
+ *   1. `SemanticRuleEngine` �?the multi-dimensional rule matcher
+ *   2. Legacy `SemanticHook` interface �?per-hook detect/evaluate
  *
  * Prefer adding rules via `addRule()` / `addRules()` (which delegates
  * to `SemanticRuleEngine`) over the legacy `register(hook)` API.
@@ -182,6 +187,11 @@ export class SemanticHookEngine {
       const hook = generateHookFromRule(rule);
       this.register(hook);
     }
+
+    // Also inject rules into the multi-dimensional rule engine
+    // so that SemanticHookAdapter.evaluate() can enforce them.
+    const semanticRules = generateSemanticRulesFromExtracted(rules);
+    this.ruleEngine.addRules(semanticRules);
 
     // Save hook metadata
     const hooksDir = path.join(projectRoot, '.harness', 'semantic-hooks');
