@@ -21,3 +21,4 @@ export { runExport } from "./export.js";
 export { runSession } from "./session.js";
 export { runPolicy } from "./policy.js";
 export { runLearn } from "./learn.js";
+export { runCleanLinks } from "./clean-links.js";

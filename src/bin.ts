@@ -32,6 +32,7 @@ import { runSession } from "./cli/session.js";
 import { runPolicy } from "./cli/policy.js";
 import { runLearn } from "./cli/learn.js";
 import { runGitHooks } from "./cli/git-hooks.js";
+import { runCleanLinks } from "./cli/clean-links.js";
 
 // Check for post-install marker and show welcome message
 const __filename = fileURLToPath(import.meta.url);
@@ -114,6 +115,8 @@ function printHelp(): void {
       recommend             Policy recommendations
       escalation [stats|reset]  Escalation management
       --days=N              Analysis period (default: 7)
+    clean-links [options]   Remove agent resource symlinks
+      --force, -f           Actually remove symlinks (default: dry run)
     help                    Show this help message
 
   Examples:
@@ -205,6 +208,10 @@ switch (command) {
       console.error("Error:", err.message);
       process.exit(1);
     });
+    break;
+
+  case "clean-links":
+    runCleanLinks(args.slice(1));
     break;
 
   case "help":
