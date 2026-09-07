@@ -33,6 +33,7 @@ import { runPolicy } from "./cli/policy.js";
 import { runLearn } from "./cli/learn.js";
 import { runGitHooks } from "./cli/git-hooks.js";
 import { runCleanLinks } from "./cli/clean-links.js";
+import { runVersion } from "./cli/version.js";
 
 // Check for post-install marker and show welcome message
 const __filename = fileURLToPath(import.meta.url);
@@ -212,6 +213,12 @@ switch (command) {
 
   case "clean-links":
     runCleanLinks(args.slice(1));
+    break;
+
+  case "version":
+  case "--version":
+  case "-v":
+    runVersion();
     break;
 
   case "help":

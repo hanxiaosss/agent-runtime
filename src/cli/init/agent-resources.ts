@@ -5,6 +5,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 
 interface AgentResourceDef {
   agentValue: string;
@@ -122,6 +123,60 @@ export function discoverProjectMcpConfigs(projectRoot: string): Array<{ path: st
   return found;
 }
 
+/**
+ * Discover global MCP config files from user home directory and common locations.
+ */
+export function discoverGlobalMcpConfigs(): Array<{ path: string; relativePath: string }> {
+  const found: Array<{ path: string; relativePath: string }> = [];
+  const seen = new Set<string>();
+  const homeDir = os.homedir();
+
+  // Common global MCP config locations
+  const globalLocations = [
+    // Claude Code global settings
+    path.join(homeDir, '.claude', 'settings.json'),
+    // VS Code settings (may contain MCP configs)
+    path.join(homeDir, '.config', 'Code', 'User', 'settings.json'),
+    path.join(homeDir, 'AppData', 'Roaming', 'Code', 'User', 'settings.json'),
+    // Cursor global settings
+    path.join(homeDir, '.cursor', 'settings.json'),
+    // Codex global settings
+    path.join(homeDir, '.codex', 'mcp.json'),
+    // Generic global MCP config
+    path.join(homeDir, '.mcp.json'),
+    path.join(homeDir, 'mcp.json'),
+  ];
+
+  for (const location of globalLocations) {
+    if (!fs.existsSync(location) || !fs.statSync(location).isFile()) continue;
+    
+    try {
+      const realPath = fs.realpathSync(location);
+      if (seen.has(realPath)) continue;
+      seen.add(realPath);
+      
+      // Try to parse and check if it has MCP servers
+      const content = fs.readFileSync(location, 'utf-8');
+      const parsed = JSON.parse(content);
+      const hasMcpServers = parsed.mcpServers || 
+                           (location.includes('settings.json') && parsed.mcpServers) ||
+                           (location.includes('mcp.json') && parsed.mcpServers);
+      
+      if (hasMcpServers) {
+        found.push({ 
+          path: location, 
+          relativePath: path.relative(homeDir, location) 
+        });
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  return found;
+}
+
+
 export function scanAgentResources(projectRoot: string, selectedAgentValue: string): DiscoveredResource[] {
   const discovered: DiscoveredResource[] = [];
 
@@ -195,6 +250,17 @@ export function scanAgentResources(projectRoot: string, selectedAgentValue: stri
     });
   }
 
+
+  // Discover global MCP configs from user home directory
+  const globalMcpConfigs = discoverGlobalMcpConfigs();
+  for (const mcpConfig of globalMcpConfigs) {
+    discovered.push({
+      sourceAgent: "global",
+      type: "mcp-file",
+      sourcePath: mcpConfig.path,
+      relativePath: "~/" + mcpConfig.relativePath,
+    });
+  }
   return discovered;
 }
 
