@@ -23,37 +23,33 @@ export interface AgentConfig {
  * is an array of { matcher, hooks: [{ type, command }] } entries.
  */
 function buildCodexHooksJson(): string {
-  const handlerPath = "dist/hooks/codex-handler.js";
+  const handlerPath = "node .harness/hooks/handler.mjs";
   const config = {
     hooks: {
       PreToolUse: [
         {
           matcher: "*",
-          hooks: [
-            { type: "command", command: `node ${handlerPath} pre-tool-use` },
-          ],
+          hooks: [{ type: "command", command: `${handlerPath} pre-tool-use` }],
         },
       ],
       PostToolUse: [
         {
           matcher: "*",
-          hooks: [
-            { type: "command", command: `node ${handlerPath} post-tool-use` },
-          ],
+          hooks: [{ type: "command", command: `${handlerPath} post-tool-use` }],
         },
       ],
       UserPromptSubmit: [
         {
           matcher: "",
           hooks: [
-            { type: "command", command: `node ${handlerPath} user-prompt-submit` },
+            { type: "command", command: `${handlerPath} user-prompt-submit` },
           ],
         },
       ],
       Stop: [
         {
           matcher: "",
-          hooks: [{ type: "command", command: `node ${handlerPath} stop` }],
+          hooks: [{ type: "command", command: `${handlerPath} stop` }],
         },
       ],
     },
@@ -322,9 +318,7 @@ export const AGENTS: AgentConfig[] = [
           UserPromptSubmit: [
             { command: "node .harness/hooks/handler.mjs user-prompt-submit" },
           ],
-          Stop: [
-            { command: "node .harness/hooks/handler.mjs stop" },
-          ],
+          Stop: [{ command: "node .harness/hooks/handler.mjs stop" }],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -359,9 +353,7 @@ export const AGENTS: AgentConfig[] = [
           UserPromptSubmit: [
             { command: "node .harness/hooks/handler.mjs user-prompt-submit" },
           ],
-          Stop: [
-            { command: "node .harness/hooks/handler.mjs stop" },
-          ],
+          Stop: [{ command: "node .harness/hooks/handler.mjs stop" }],
         },
       };
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
