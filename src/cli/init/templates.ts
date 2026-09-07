@@ -281,12 +281,24 @@ export const HANDLER_MJS = `#!/usr/bin/env node
  * Reads stdin JSON → evaluates policies → writes traces → outputs decisions.
  *
  * Usage (in agent settings):
- *   PreToolUse:            node .harness/hooks/handler.mjs pre-tool-use
- *   PostToolUse:           node .harness/hooks/handler.mjs post-tool-use
- *   UserPromptSubmit:      node .harness/hooks/handler.mjs user-prompt-submit
- *   Stop:                  node .harness/hooks/handler.mjs stop
- *   PermissionRequest:     node .harness/hooks/handler.mjs permission-request
- *   PreCompact:            node .harness/hooks/handler.mjs pre-compact
+ *   Blocking hooks (exit 2 possible):
+ *     PreToolUse:            node .harness/hooks/handler.mjs pre-tool-use
+ *     PostToolUse:           node .harness/hooks/handler.mjs post-tool-use
+ *     PostToolUseFailure:    node .harness/hooks/handler.mjs post-tool-use-failure
+ *     PostToolBatch:         node .harness/hooks/handler.mjs post-tool-batch
+ *     UserPromptSubmit:      node .harness/hooks/handler.mjs user-prompt-submit
+ *     UserPromptExpansion:   node .harness/hooks/handler.mjs user-prompt-expansion
+ *     Stop:                  node .harness/hooks/handler.mjs stop
+ *     PermissionRequest:     node .harness/hooks/handler.mjs permission-request
+ *     MessageDisplay:        node .harness/hooks/handler.mjs message-display
+ *     SubagentStop:          node .harness/hooks/handler.mjs subagent-stop
+ *     TaskCreated:           node .harness/hooks/handler.mjs task-created
+ *     TaskCompleted:         node .harness/hooks/handler.mjs task-completed
+ *     PreCompact:            node .harness/hooks/handler.mjs pre-compact
+ *   Informational hooks (always exit 0):
+ *     SessionStart:          node .harness/hooks/handler.mjs session-start
+ *     CwdChanged:            node .harness/hooks/handler.mjs cwd-changed
+ *     FileChanged:           node .harness/hooks/handler.mjs file-changed
  *
  * Log format: [timestamp] [hannah] [HookEvent:ToolName] [Category] ACTION | target | rule-id
  *   Categories: file-protection | command-safety | secret-detection | mcp-safety |
@@ -1338,7 +1350,7 @@ function readStdin() {
 async function main() {
   const mode = process.argv[2];
   if (!mode) {
-    console.error("Usage: handler.mjs <pre-tool-use|post-tool-use|user-prompt-submit|stop>");
+    console.error("Usage: handler.mjs <pre-tool-use|post-tool-use|post-tool-use-failure|post-tool-batch|user-prompt-submit|user-prompt-expansion|stop|permission-request|message-display|subagent-stop|task-created|task-completed|pre-compact|session-start|cwd-changed|file-changed>");
     process.exit(1);
   }
 
@@ -1483,6 +1495,187 @@ async function main() {
       log("[PreCompact] [session] Session state saved");
     } catch (err) {
       debug("Failed to save pre-compact state:", err.message);
+    }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle session-start mode: record session initialization (informational)
+  if (mode === "session-start") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    log("[SessionStart] [session] Session initialized");
+    writeTrace("session.start", {
+      timestamp: new Date().toISOString(),
+      agent: input.source || input.agent || "unknown",
+      cwd: process.cwd()
+    }, "allow", null, agentSessionId);
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle cwd-changed mode: track working directory changes (informational)
+  if (mode === "cwd-changed") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const newCwd = input.cwd || input.new_cwd || process.cwd();
+    log("[CwdChanged] [session] CWD changed to: " + newCwd);
+    writeTrace("session.cwd_changed", { newCwd }, "allow", null, agentSessionId);
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle file-changed mode: track external file changes (informational)
+  if (mode === "file-changed") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const filePath = input.file_path || input.path || "";
+    log("[FileChanged] [session] File changed: " + filePath);
+    writeTrace("session.file_changed", { filePath }, "allow", null, agentSessionId);
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle user-prompt-expansion mode: scan expanded prompt context (blocking)
+  if (mode === "user-prompt-expansion") {
+    const userMessage =
+      input.user_message || input.user_prompt || input.prompt ||
+      input.message || input.content || input.text ||
+      (input.input && typeof input.input === "string" ? input.input : "") || "";
+    const agentSessionId = input.session_id || input.sessionId || null;
+    if (userMessage) {
+      log("[UserPromptExpansion] [prompt-scan] Scanning expanded prompt:", userMessage.substring(0, 80));
+      writeTrace("prompt.expansion", { expandedPrompt: userMessage.substring(0, 200) }, "allow", null, agentSessionId);
+
+      const secretPatterns = [
+        { pattern: /password\\s*=\\s*["']/i, rule: "expansion-secret-password" },
+        { pattern: /api[_\\s]?key\\s*=\\s*["']/i, rule: "expansion-secret-apikey" },
+        { pattern: /begin\\s+(rsa|ec|openssh)\\s+private\\s+key/i, rule: "expansion-secret-privatekey" },
+      ];
+      for (const sp of secretPatterns) {
+        if (sp.pattern.test(userMessage)) {
+          log("[UserPromptExpansion] [prompt-scan] WARN | " + sp.rule);
+          writeTrace("prompt." + sp.rule, { expandedPrompt: userMessage.substring(0, 100) }, "warn",
+            "Potential secret in expanded prompt: " + sp.rule, agentSessionId);
+        }
+      }
+    }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle message-display mode: filter output for sensitive content (blocking)
+  if (mode === "message-display") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const message = input.message || input.content || input.text || "";
+    if (message) {
+      log("[MessageDisplay] [output-filter] Scanning output for sensitive content...");
+      const secretPatterns = [
+        { pattern: /-----BEGIN\\s+(RSA|EC|OPENSSH)\\s+PRIVATE\\s+KEY-----/i, rule: "output-leak-privatekey" },
+        { pattern: /password\\s*=\\s*["'][^"']+["']/i, rule: "output-leak-password" },
+        { pattern: /api[_\\s]?key\\s*=\\s*["'][A-Za-z0-9_\\-]{16,}["']/i, rule: "output-leak-apikey" },
+      ];
+      for (const sp of secretPatterns) {
+        if (sp.pattern.test(message)) {
+          log("[MessageDisplay] [output-filter] DENY | " + sp.rule + " | secret in output");
+          writeTrace("output." + sp.rule, { messagePreview: message.substring(0, 100) }, "deny",
+            "Output contains sensitive content: " + sp.rule, agentSessionId);
+          process.stdout.write(JSON.stringify({
+            decision: "deny",
+            reason: "Output contains sensitive content",
+            stopReason: "Blocked: output may leak secrets (" + sp.rule + "). Redact before displaying.",
+            suggestions: ["Redact the sensitive content from the output"]
+          }));
+          process.stderr.write("[HOOK_DENY] Output blocked: may leak secrets (" + sp.rule + ")\\n");
+          process.exit(2);
+        }
+      }
+    }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle task-created mode: track task creation (blocking for audit)
+  if (mode === "task-created") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const taskDesc = input.task_description || input.description || input.task || "";
+    log("[TaskCreated] [session] Task created: " + taskDesc.substring(0, 80));
+    writeTrace("session.task_created", { taskDescription: taskDesc.substring(0, 200) }, "allow", null, agentSessionId);
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle task-completed mode: track task completion (blocking for audit)
+  if (mode === "task-completed") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const taskDesc = input.task_description || input.description || input.task || "";
+    log("[TaskCompleted] [session] Task completed: " + taskDesc.substring(0, 80));
+    writeTrace("session.task_completed", { taskDescription: taskDesc.substring(0, 200) }, "allow", null, agentSessionId);
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle subagent-stop mode: audit subagent completion (blocking)
+  if (mode === "subagent-stop") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const subagentName = input.subagent_name || input.agent_name || input.name || "unknown";
+    log("[SubagentStop] [session] Subagent stopped: " + subagentName);
+    writeTrace("session.subagent_stop", { subagentName }, "allow", null, agentSessionId);
+    const subagentOutput = input.output || input.result || "";
+    if (subagentOutput) {
+      const semRule = evaluateSemanticRules({ tool_name: "SubagentStop", tool_input: { content: subagentOutput, command: subagentOutput } });
+      if (semRule && semRule.action === "deny") {
+        log("[SubagentStop] [semantic] DENY | " + semRule.name + " | " + semRule.feedback);
+        writeTrace("semantic." + semRule.name, { subagentName }, "deny", semRule.feedback, agentSessionId);
+        process.stdout.write(JSON.stringify({
+          decision: "deny",
+          reason: semRule.feedback,
+          stopReason: semRule.feedback,
+          suggestions: semRule.suggestions || []
+        }));
+        process.stderr.write("[HOOK_DENY] " + semRule.feedback + "\\n");
+        process.exit(2);
+      }
+    }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle post-tool-use-failure mode: audit failed tool operations
+  if (mode === "post-tool-use-failure") {
+    const toolName = input.tool_name || "unknown";
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const errorMsg = input.error || input.error_message || "";
+    log("[PostToolUseFailure] [side-effect] Tool failed: " + toolName + " | " + errorMsg.substring(0, 80));
+    writeTrace("tool.failure", { toolName, error: errorMsg.substring(0, 200) }, "warn",
+      "Tool execution failed: " + toolName, agentSessionId);
+    const semRule = evaluateSemanticRules(input);
+    if (semRule && semRule.action === "deny") {
+      log("[PostToolUseFailure] [semantic] DENY | " + semRule.name);
+      writeTrace("semantic." + semRule.name, { toolName }, "deny", semRule.feedback, agentSessionId);
+    }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle post-tool-batch mode: audit batch tool operations
+  if (mode === "post-tool-batch") {
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const tools = input.tools || input.tool_uses || [];
+    log("[PostToolBatch] [side-effect] Batch of", tools.length, "tools completed");
+    writeTrace("tool.batch", { toolCount: tools.length }, "allow", null, agentSessionId);
+    for (const tool of tools) {
+      const tn = tool.tool_name || tool.name || "unknown";
+      const semRule = evaluateSemanticRules({ ...input, tool_name: tn, tool_input: tool.tool_input || tool.input || {} });
+      if (semRule && semRule.action === "deny") {
+        log("[PostToolBatch] [semantic] DENY | " + semRule.name + " | tool: " + tn);
+        writeTrace("semantic." + semRule.name, { toolName: tn }, "deny", semRule.feedback, agentSessionId);
+        process.stdout.write(JSON.stringify({
+          decision: "deny",
+          reason: semRule.feedback,
+          stopReason: "Batch tool '" + tn + "' violated rule: " + semRule.name,
+          suggestions: semRule.suggestions || []
+        }));
+        process.stderr.write("[HOOK_DENY] " + semRule.feedback + "\\n");
+        process.exit(2);
+      }
     }
     process.stdout.write(JSON.stringify({ decision: "allow" }));
     process.exit(0);

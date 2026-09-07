@@ -25,16 +25,61 @@ import { HookConfigurationLoader } from "../core/hook-config-loader.js";
 
 /**
  * Hook 事件能力矩阵 - 表示每个运行时支持的 hook 事件
+ * 覆盖 Claude Code 全部 31 个 hook 生命周期事件（v2.1.233+）
+ *
+ * Blocking hooks（可通过 exit 2 拦截）:
+ *   PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch,
+ *   PermissionRequest, SubagentStop, TaskCreated, TaskCompleted,
+ *   Stop, UserPromptSubmit, UserPromptExpansion, MessageDisplay
+ *
+ * Informational hooks（仅审计/追踪，不可 block）:
+ *   SessionStart, Setup, SessionEnd, StopFailure, PermissionDenied,
+ *   SubagentStart, PreCompact, PostCompact, CwdChanged, FileChanged,
+ *   DirectoryAdded, WorktreeCreate, WorktreeRemove, Notification,
+ *   TeammateIdle, ConfigChange, InstructionsLoaded, Elicitation, ElicitationResult
  */
 export interface HookCapabilities {
+  // Session
   SessionStart: boolean;
-  PreToolUse: boolean;
-  PermissionRequest: boolean;
-  PostToolUse: boolean;
-  Stop: boolean;
+  Setup: boolean;
+  SessionEnd: boolean;
+  // Turn
   UserPromptSubmit: boolean;
+  UserPromptExpansion: boolean;
+  Stop: boolean;
+  StopFailure: boolean;
+  // Tool
+  PreToolUse: boolean;
+  PostToolUse: boolean;
+  PostToolUseFailure: boolean;
+  PostToolBatch: boolean;
+  // Permission
+  PermissionRequest: boolean;
+  PermissionDenied: boolean;
+  // Subagent
+  SubagentStart: boolean;
+  SubagentStop: boolean;
+  // Task
+  TaskCreated: boolean;
+  TaskCompleted: boolean;
+  // Compact
   PreCompact: boolean;
   PostCompact: boolean;
+  // File / Dir
+  CwdChanged: boolean;
+  FileChanged: boolean;
+  DirectoryAdded: boolean;
+  // Worktree
+  WorktreeCreate: boolean;
+  WorktreeRemove: boolean;
+  // Other
+  Notification: boolean;
+  MessageDisplay: boolean;
+  TeammateIdle: boolean;
+  ConfigChange: boolean;
+  InstructionsLoaded: boolean;
+  Elicitation: boolean;
+  ElicitationResult: boolean;
 }
 
 // ─── Input/Output Types ─────────────────────────────────────────────
@@ -371,20 +416,9 @@ export abstract class HookAdapterV2 extends BaseAdapter {
    * 获取支持的 hooks 列表
    */
   async getSupportedHooks(): Promise<string[]> {
-    const supported: string[] = [];
-
-    if (this.hookCapabilities.SessionStart) supported.push("SessionStart");
-    if (this.hookCapabilities.PreToolUse) supported.push("PreToolUse");
-    if (this.hookCapabilities.PermissionRequest)
-      supported.push("PermissionRequest");
-    if (this.hookCapabilities.PostToolUse) supported.push("PostToolUse");
-    if (this.hookCapabilities.Stop) supported.push("Stop");
-    if (this.hookCapabilities.UserPromptSubmit)
-      supported.push("UserPromptSubmit");
-    if (this.hookCapabilities.PreCompact) supported.push("PreCompact");
-    if (this.hookCapabilities.PostCompact) supported.push("PostCompact");
-
-    return supported;
+    return Object.entries(this.hookCapabilities)
+      .filter(([_, supported]) => supported)
+      .map(([name]) => name);
   }
 
   /**

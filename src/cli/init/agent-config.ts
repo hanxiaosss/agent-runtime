@@ -74,9 +74,22 @@ export const AGENTS: AgentConfig[] = [
       "matcher": "",
       "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use", "timeout": 15, "statusMessage": "Verifying tool side effects..." }]
     }],
+    "PostToolUseFailure": [
+      { "matcher": "Write|Edit|MultiEdit", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use-failure", "timeout": 15, "statusMessage": "Auditing failed file write..." }] },
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use-failure", "timeout": 15, "statusMessage": "Auditing failed shell command..." }] },
+      { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use-failure", "timeout": 10, "statusMessage": "Auditing failed read access..." }] }
+    ],
+    "PostToolBatch": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-batch", "timeout": 15, "statusMessage": "Auditing batch tool operations..." }]
+    }],
     "UserPromptSubmit": [{
       "matcher": "",
       "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs user-prompt-submit", "timeout": 15, "statusMessage": "Scanning prompt for security risks..." }]
+    }],
+    "UserPromptExpansion": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs user-prompt-expansion", "timeout": 15, "statusMessage": "Scanning expanded prompt context..." }]
     }],
     "Stop": [{
       "matcher": "",
@@ -86,9 +99,37 @@ export const AGENTS: AgentConfig[] = [
       "matcher": "",
       "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs permission-request", "timeout": 15, "statusMessage": "Checking permission request..." }]
     }],
+    "MessageDisplay": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs message-display", "timeout": 10, "statusMessage": "Filtering output for sensitive content..." }]
+    }],
+    "SubagentStop": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs subagent-stop", "timeout": 15, "statusMessage": "Auditing subagent completion..." }]
+    }],
+    "TaskCreated": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs task-created", "timeout": 10, "statusMessage": "Tracking task creation..." }]
+    }],
+    "TaskCompleted": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs task-completed", "timeout": 10, "statusMessage": "Tracking task completion..." }]
+    }],
     "PreCompact": [{
       "matcher": "",
       "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-compact", "timeout": 10, "statusMessage": "Saving session state before compaction..." }]
+    }],
+    "SessionStart": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs session-start", "timeout": 10, "statusMessage": "Initializing session tracking..." }]
+    }],
+    "CwdChanged": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs cwd-changed", "timeout": 5, "statusMessage": "Tracking directory change..." }]
+    }],
+    "FileChanged": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs file-changed", "timeout": 5, "statusMessage": "Tracking file change..." }]
     }]
   }
 }`,
@@ -119,10 +160,36 @@ export const AGENTS: AgentConfig[] = [
               hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use", timeout: 15, statusMessage: "Verifying tool side effects..." }],
             },
           ],
+          PostToolUseFailure: [
+            {
+              matcher: "Write|Edit|MultiEdit",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use-failure", timeout: 15, statusMessage: "Auditing failed file write..." }],
+            },
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use-failure", timeout: 15, statusMessage: "Auditing failed shell command..." }],
+            },
+            {
+              matcher: "Read|Glob|Grep",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use-failure", timeout: 10, statusMessage: "Auditing failed read access..." }],
+            },
+          ],
+          PostToolBatch: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-batch", timeout: 15, statusMessage: "Auditing batch tool operations..." }],
+            },
+          ],
           UserPromptSubmit: [
             {
               matcher: "",
               hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs user-prompt-submit", timeout: 15, statusMessage: "Scanning prompt for security risks..." }],
+            },
+          ],
+          UserPromptExpansion: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs user-prompt-expansion", timeout: 15, statusMessage: "Scanning expanded prompt context..." }],
             },
           ],
           Stop: [
@@ -137,10 +204,52 @@ export const AGENTS: AgentConfig[] = [
               hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs permission-request", timeout: 15, statusMessage: "Checking permission request..." }],
             },
           ],
+          MessageDisplay: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs message-display", timeout: 10, statusMessage: "Filtering output for sensitive content..." }],
+            },
+          ],
+          SubagentStop: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs subagent-stop", timeout: 15, statusMessage: "Auditing subagent completion..." }],
+            },
+          ],
+          TaskCreated: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs task-created", timeout: 10, statusMessage: "Tracking task creation..." }],
+            },
+          ],
+          TaskCompleted: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs task-completed", timeout: 10, statusMessage: "Tracking task completion..." }],
+            },
+          ],
           PreCompact: [
             {
               matcher: "",
               hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-compact", timeout: 10, statusMessage: "Saving session state before compaction..." }],
+            },
+          ],
+          SessionStart: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs session-start", timeout: 10, statusMessage: "Initializing session tracking..." }],
+            },
+          ],
+          CwdChanged: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs cwd-changed", timeout: 5, statusMessage: "Tracking directory change..." }],
+            },
+          ],
+          FileChanged: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs file-changed", timeout: 5, statusMessage: "Tracking file change..." }],
             },
           ],
         },

@@ -32,7 +32,7 @@ export class CopilotAdapterV2 extends HookAdapterV2 {
   /**
    * Copilot 支持 6 个 hook 事件
    */
-  readonly hookCapabilities: HookCapabilities = {
+  readonly hookCapabilities: Partial<HookCapabilities> = {
     SessionStart: true,
     PreToolUse: true,
     PermissionRequest: true,

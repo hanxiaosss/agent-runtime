@@ -508,4 +508,162 @@ describe("CLI init: agent-config.ts Claude Code config", () => {
     );
     expect(source).toContain("PreCompact");
   });
+
+  it("should include all 16 hook configurations in hookConfig", () => {
+    const source = fs.readFileSync(
+      path.resolve("src/cli/init/agent-config.ts"),
+      "utf-8",
+    );
+    const hookNames = [
+      "PreToolUse", "PostToolUse", "PostToolUseFailure", "PostToolBatch",
+      "UserPromptSubmit", "UserPromptExpansion",
+      "Stop", "PermissionRequest",
+      "MessageDisplay", "SubagentStop",
+      "TaskCreated", "TaskCompleted",
+      "PreCompact", "SessionStart",
+      "CwdChanged", "FileChanged",
+    ];
+    for (const name of hookNames) {
+      expect(source).toContain(name);
+    }
+  });
+
+  it("should include new blocking hooks in generateConfig", () => {
+    const source = fs.readFileSync(
+      path.resolve("src/cli/init/agent-config.ts"),
+      "utf-8",
+    );
+    expect(source).toContain("PostToolUseFailure");
+    expect(source).toContain("PostToolBatch");
+    expect(source).toContain("UserPromptExpansion");
+    expect(source).toContain("MessageDisplay");
+    expect(source).toContain("SubagentStop");
+    expect(source).toContain("TaskCreated");
+    expect(source).toContain("TaskCompleted");
+    expect(source).toContain("SessionStart");
+    expect(source).toContain("CwdChanged");
+    expect(source).toContain("FileChanged");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+
+describe("New handler modes", () => {
+  it("session-start: should exit 0 and allow", () => {
+    const { exitCode, stdout } = runHandler("session-start", {
+      source: "claude-code",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("cwd-changed: should exit 0 and allow", () => {
+    const { exitCode, stdout } = runHandler("cwd-changed", {
+      cwd: "/tmp/newdir",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("file-changed: should exit 0 and allow", () => {
+    const { exitCode, stdout } = runHandler("file-changed", {
+      file_path: "src/index.ts",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("user-prompt-expansion: should exit 0 for safe prompt", () => {
+    const { exitCode, stdout } = runHandler("user-prompt-expansion", {
+      user_message: "Please help me refactor this function",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("user-prompt-expansion: should warn on secret in prompt", () => {
+    const { exitCode, stderr } = runHandler("user-prompt-expansion", {
+      user_message: `my ${E.pwd} = ${DQUOTE}secret${DQUOTE}`,
+    });
+    // user-prompt-expansion always exits 0 (informational warning)
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain("expansion-secret-password");
+  });
+
+  it("message-display: should exit 0 for safe output", () => {
+    const { exitCode, stdout } = runHandler("message-display", {
+      message: "Here is the refactored function",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("message-display: should DENY output containing private key", () => {
+    const { exitCode } = runHandler("message-display", {
+      message: `Here is the key: ${E.dash.repeat(5)}BEGIN RSA PRIVATE KEY${E.dash.repeat(5)}`,
+    });
+    expect(exitCode).toBe(2);
+  });
+
+  it("task-created: should exit 0 and allow", () => {
+    const { exitCode, stdout } = runHandler("task-created", {
+      task_description: "Refactor the auth module",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("task-completed: should exit 0 and allow", () => {
+    const { exitCode, stdout } = runHandler("task-completed", {
+      task_description: "Refactor the auth module",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("subagent-stop: should exit 0 for safe subagent output", () => {
+    const { exitCode, stdout } = runHandler("subagent-stop", {
+      subagent_name: "code-reviewer",
+      output: "All tests pass, no issues found.",
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("post-tool-use-failure: should exit 0 (audit only)", () => {
+    const { exitCode } = runHandler("post-tool-use-failure", {
+      tool_name: "Bash",
+      error: "Command failed: exit code 1",
+    });
+    expect(exitCode).toBe(0);
+  });
+
+  it("post-tool-batch: should exit 0 for safe batch", () => {
+    const { exitCode, stdout } = runHandler("post-tool-batch", {
+      tools: [
+        { tool_name: "Read", tool_input: { file_path: "src/index.ts" } },
+        { tool_name: "Glob", tool_input: { pattern: "**/*.ts" } },
+      ],
+    });
+    expect(exitCode).toBe(0);
+    const out = parseOutput(stdout);
+    expect(out.decision).toBe("allow");
+  });
+
+  it("post-tool-batch: should DENY batch with semantic rule violation", () => {
+    const { exitCode } = runHandler("post-tool-batch", {
+      tools: [
+        { tool_name: "Write", tool_input: { file_path: ".env", content: "SECRET=abc" } },
+      ],
+    });
+    expect(exitCode).toBe(2);
+  });
 });

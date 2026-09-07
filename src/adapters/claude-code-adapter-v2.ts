@@ -2,7 +2,7 @@
  * Claude Code Hook Adapter V2
  *
  * 针对 Anthropic Claude Code 运行时的 hook 适配器实现
- * 支持 7 个 hook 事件
+ * 支持 31 个 hook 事件（v2.1.233+）
  */
 
 import * as path from "path";
@@ -30,17 +30,61 @@ export class ClaudeCodeAdapterV2 extends HookAdapterV2 {
   declare readonly name: string;
 
   /**
-   * Claude Code 支持 7 个 hook 事件
+   * Claude Code 支持全部 31 个 hook 事件（v2.1.233+）
+   *
+   * Blocking hooks（12 个，可通过 exit 2 拦截）:
+   *   PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch,
+   *   PermissionRequest, SubagentStop, TaskCreated, TaskCompleted,
+   *   Stop, UserPromptSubmit, UserPromptExpansion, MessageDisplay
+   *
+   * Informational hooks（19 个，仅审计/追踪）:
+   *   SessionStart, Setup, SessionEnd, StopFailure, PermissionDenied,
+   *   SubagentStart, PreCompact, PostCompact, CwdChanged, FileChanged,
+   *   DirectoryAdded, WorktreeCreate, WorktreeRemove, Notification,
+   *   TeammateIdle, ConfigChange, InstructionsLoaded, Elicitation, ElicitationResult
    */
   readonly hookCapabilities: HookCapabilities = {
+    // Session
     SessionStart: true,
-    PreToolUse: true,
-    PermissionRequest: true,
-    PostToolUse: true,
-    Stop: true,
+    Setup: true,
+    SessionEnd: true,
+    // Turn
     UserPromptSubmit: true,
+    UserPromptExpansion: true,
+    Stop: true,
+    StopFailure: true,
+    // Tool
+    PreToolUse: true,
+    PostToolUse: true,
+    PostToolUseFailure: true,
+    PostToolBatch: true,
+    // Permission
+    PermissionRequest: true,
+    PermissionDenied: true,
+    // Subagent
+    SubagentStart: true,
+    SubagentStop: true,
+    // Task
+    TaskCreated: true,
+    TaskCompleted: true,
+    // Compact
     PreCompact: true,
-    PostCompact: false,
+    PostCompact: true,
+    // File / Dir
+    CwdChanged: true,
+    FileChanged: true,
+    DirectoryAdded: true,
+    // Worktree
+    WorktreeCreate: true,
+    WorktreeRemove: true,
+    // Other
+    Notification: true,
+    MessageDisplay: true,
+    TeammateIdle: true,
+    ConfigChange: true,
+    InstructionsLoaded: true,
+    Elicitation: true,
+    ElicitationResult: true,
   };
 
   constructor(harnessDir: string = ".harness") {

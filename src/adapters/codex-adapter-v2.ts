@@ -19,7 +19,7 @@ export class CodexAdapterV2 extends HookAdapterV2 {
   /**
    * Codex 支持所有 8 个 hook 事件
    */
-  readonly hookCapabilities: HookCapabilities = {
+  readonly hookCapabilities: Partial<HookCapabilities> = {
     SessionStart: true,
     PreToolUse: true,
     PermissionRequest: true,

@@ -32,7 +32,7 @@ export class TraeAdapterV2 extends HookAdapterV2 {
   /**
    * Trae 支持 4 个 hook 事件
    */
-  readonly hookCapabilities: HookCapabilities = {
+  readonly hookCapabilities: Partial<HookCapabilities> = {
     SessionStart: false,
     PreToolUse: true,
     PermissionRequest: false,

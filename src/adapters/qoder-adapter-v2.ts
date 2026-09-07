@@ -32,7 +32,7 @@ export class QoderAdapterV2 extends HookAdapterV2 {
   /**
    * Qoder 支持 4 个 hook 事件
    */
-  readonly hookCapabilities: HookCapabilities = {
+  readonly hookCapabilities: Partial<HookCapabilities> = {
     SessionStart: true,
     PreToolUse: false,
     PermissionRequest: true,
