@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent resource scanning and symlinking.
  * Discovers skills/MCP configs from other agents and links them to the selected agent.
  */
@@ -251,22 +251,46 @@ export function linkAgentResources(
       }
     } else if (resource.type === "mcp-file") {
       if (!targets.mcpTarget) continue;
-      const targetMcpAbs = path.join(projectRoot, targets.mcpTarget);
-      const targetDir = path.dirname(targetMcpAbs);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
+      
+      // Check if target agent uses mcpSettingsFiles (like Claude Code)
+      const agentDef = AGENT_RESOURCE_MAP.find(a => a.agentValue === selectedAgentValue);
+      const usesSettingsFile = agentDef?.mcpSettingsFiles && agentDef.mcpSettingsFiles.length > 0;
+      
+      if (usesSettingsFile) {
+        // For agents using settings files (Claude Code, Qoder, etc.), read and merge mcpServers
+        try {
+          const mcpContent = JSON.parse(fs.readFileSync(resource.sourcePath, "utf-8"));
+          const mcpServers = mcpContent.mcpServers || mcpContent;
+          if (mcpServers && typeof mcpServers === "object") {
+            for (const [name, config] of Object.entries(mcpServers)) {
+              if (!mergedMcpServers[name]) {
+                mergedMcpServers[name] = config;
+              }
+            }
+            console.log("     Queued MCP servers from " + resource.relativePath + " for merging");
+          }
+        } catch (err: any) {
+          console.log("    ⚠️ Failed to read MCP config " + resource.relativePath + ": " + err.message);
+        }
+      } else {
+        // For agents using dedicated mcp.json files (Codex, Cursor), create symlink
+        const targetMcpAbs = path.join(projectRoot, targets.mcpTarget);
+        const targetDir = path.dirname(targetMcpAbs);
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
 
-      if (fs.existsSync(targetMcpAbs)) {
-        console.log("    ⚠ Skipped MCP config (already exists): " + targets.mcpTarget);
-        continue;
-      }
+        if (fs.existsSync(targetMcpAbs)) {
+          console.log("    ⚠️ Skipped MCP config (already exists): " + targets.mcpTarget);
+          continue;
+        }
 
-      try {
-        fs.symlinkSync(resource.sourcePath, targetMcpAbs, "file");
-        console.log("    🔗 Linked MCP config: " + targets.mcpTarget + " ← " + resource.relativePath);
-      } catch (err: any) {
-        console.log("    ⚠ Failed to link MCP config: " + err.message);
+        try {
+          fs.symlinkSync(resource.sourcePath, targetMcpAbs, "file");
+          console.log("     Linked MCP config: " + targets.mcpTarget + " ← " + resource.relativePath);
+        } catch (err: any) {
+          console.log("    ⚠️ Failed to link MCP config: " + err.message);
+        }
       }
     } else if (resource.type === "mcp-settings") {
       if (resource.mcpServers) {

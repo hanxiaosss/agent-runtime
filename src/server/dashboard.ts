@@ -554,26 +554,26 @@ function getDashboardHTML(): string {
   .section { padding: 0 24px 24px; }
   .section h2 { font-size: 15px; margin-bottom: 12px; color: #c9d1d9; }
   table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
-  th { text-align: left; padding: 10px 16px; background: #1c2128; font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
-  td { padding: 10px 16px; border-top: 1px solid #21262d; font-size: 13px; }
+  th { text-align: left; padding: 12px 16px; background: #1c2128; font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 12px 16px; border-top: 1px solid #21262d; font-size: 13px; line-height: 1.6; }
   tr.session-row { cursor: pointer; background: #161b22; }
   tr.session-row:hover { background: #1c2128; }
   tr.session-detail { display: none; }
   tr.session-detail.open { display: table-row; }
   tr.session-detail td { padding: 0; background: #0d1117; }
-  .session-content { padding: 0 16px 16px; }
+  .session-content { padding: 0 20px 20px; }
   .session-content table { border: none; border-radius: 0; background: transparent; }
   .session-content th { background: #161b22; font-size: 11px; }
-  .session-content td { font-size: 12px; border-top: 1px solid #1c2128; }
+  .session-content td { font-size: 12px; border-top: 1px solid #1c2128; padding: 10px 14px; line-height: 1.6; }
   tr.round-row { cursor: pointer; }
   tr.round-row:hover { background: #1c2128; }
   tr.round-detail { display: none; }
   tr.round-detail.open { display: table-row; }
   tr.round-detail td { padding: 0; background: #0d1117; }
-  .round-events { padding: 12px 16px; }
+  .round-events { padding: 16px 20px; }
   .round-events table { border: none; border-radius: 0; }
-  .round-events th { background: #161b22; font-size: 11px; }
-  .round-events td { font-size: 12px; border-top: 1px solid #1c2128; }
+  .round-events th { background: #161b22; font-size: 11px; padding: 10px 14px; }
+  .round-events td { font-size: 12px; border-top: 1px solid #1c2128; padding: 10px 14px; line-height: 1.6; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
   .badge.deny { background: #f8514922; color: #f85149; }
   .badge.allow { background: #3fb95022; color: #3fb950; }
@@ -593,7 +593,7 @@ function getDashboardHTML(): string {
   .toggle-arrow.open { transform: rotate(90deg); }
   .rounds-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .rounds-count { background: #30363d; color: #8b949e; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
-  .user-input-box { background: #1c2128; border: 1px solid #30363d; border-left: 3px solid #58a6ff; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #e1e4e8; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+  .user-input-box { background: #1c2128; border: 1px solid #30363d; border-left: 3px solid #58a6ff; border-radius: 6px; padding: 14px 18px; margin-bottom: 16px; font-size: 13px; color: #e1e4e8; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
   .user-input-box .input-label { font-size: 11px; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600; }
   .user-input-box .input-text { color: #c9d1d9; }
   tr.prompt-row { background: #161b22; border-left: 3px solid #58a6ff; }
