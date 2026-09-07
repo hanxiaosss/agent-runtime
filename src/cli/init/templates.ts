@@ -1468,6 +1468,17 @@ async function main() {
         finalReason = semRule.feedback;
         finalFeedback = semRule.feedback;
         if (semRule.suggestions) finalSuggestions = semRule.suggestions;
+        
+        // CRITICAL: When semantic rule denies, output immediately and exit
+        // Do NOT continue to reflection or other checks
+        const output = { decision: finalDecision };
+        if (finalReason) output.reason = finalReason;
+        if (finalFeedback) output.stopReason = finalFeedback;
+        if (finalSuggestions.length > 0) output.suggestions = finalSuggestions;
+        
+        process.stdout.write(JSON.stringify(output));
+        process.stderr.write("[HOOK_DENY] " + finalFeedback + "\\n");
+        process.exit(2);
       } else if (semRule.action === "modify" && !finalModifiedInput) {
         finalDecision = "allow"; // modify means "allow with modified input"
         finalReason = semRule.feedback;
