@@ -12,20 +12,20 @@ describe("ClaudeCodeAdapterV2", () => {
     expect(adapter.name).toBe("claude-code-v2");
   });
 
-  it("should support 6 hooks", async () => {
+  it("should support 7 hooks", async () => {
     const supported = await adapter.getSupportedHooks();
-    expect(supported).toHaveLength(6);
+    expect(supported).toHaveLength(7);
     expect(supported).toContain("SessionStart");
     expect(supported).toContain("PreToolUse");
     expect(supported).toContain("PostToolUse");
     expect(supported).toContain("PermissionRequest");
     expect(supported).toContain("Stop");
     expect(supported).toContain("UserPromptSubmit");
+    expect(supported).toContain("PreCompact");
   });
 
-  it("should not support compact hooks", async () => {
+  it("should not support PostCompact", async () => {
     const supported = await adapter.getSupportedHooks();
-    expect(supported).not.toContain("PreCompact");
     expect(supported).not.toContain("PostCompact");
   });
 
@@ -33,7 +33,7 @@ describe("ClaudeCodeAdapterV2", () => {
     const health = await adapter.getHealthStatus();
     expect(health.healthy).toBe(true);
     expect(health.version).toBe("2.0.0");
-    expect(health.hooks).toHaveLength(6);
+    expect(health.hooks).toHaveLength(7);
   });
 
   it("should export metrics", async () => {

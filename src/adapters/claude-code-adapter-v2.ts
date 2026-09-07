@@ -2,7 +2,7 @@
  * Claude Code Hook Adapter V2
  *
  * 针对 Anthropic Claude Code 运行时的 hook 适配器实现
- * 支持 6 个 hook 事件
+ * 支持 7 个 hook 事件
  */
 
 import * as path from "path";
@@ -14,23 +14,23 @@ import type { EventCapability } from "../core/event.js";
 /**
  * Claude Code Hook Adapter V2 实现
  *
- * Claude Code 运行时支持 6 个标准 hook 事件：
+ * Claude Code 运行时支持 7 个标准 hook 事件：
  * - SessionStart: 会话启动时触发
  * - PreToolUse: 工具调用前触发
  * - PostToolUse: 工具调用后触发
  * - PermissionRequest: 权限请求时触发
  * - Stop: 会话停止时触发
  * - UserPromptSubmit: 用户提示提交时触发
+ * - PreCompact: 上下文压缩前触发
  *
  * 不支持的 hooks：
- * - PreCompact
  * - PostCompact
  */
 export class ClaudeCodeAdapterV2 extends HookAdapterV2 {
   declare readonly name: string;
 
   /**
-   * Claude Code 支持 6 个 hook 事件
+   * Claude Code 支持 7 个 hook 事件
    */
   readonly hookCapabilities: HookCapabilities = {
     SessionStart: true,
@@ -39,7 +39,7 @@ export class ClaudeCodeAdapterV2 extends HookAdapterV2 {
     PostToolUse: true,
     Stop: true,
     UserPromptSubmit: true,
-    PreCompact: false,
+    PreCompact: true,
     PostCompact: false,
   };
 

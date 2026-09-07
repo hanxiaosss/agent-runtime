@@ -281,9 +281,16 @@ export const HANDLER_MJS = `#!/usr/bin/env node
  * Reads stdin JSON → evaluates policies → writes traces → outputs decisions.
  *
  * Usage (in agent settings):
- *   PreToolUse:  node .harness/hooks/handler.mjs pre-tool-use
- *   PostToolUse: node .harness/hooks/handler.mjs post-tool-use
- *   Stop:        node .harness/hooks/handler.mjs stop
+ *   PreToolUse:            node .harness/hooks/handler.mjs pre-tool-use
+ *   PostToolUse:           node .harness/hooks/handler.mjs post-tool-use
+ *   UserPromptSubmit:      node .harness/hooks/handler.mjs user-prompt-submit
+ *   Stop:                  node .harness/hooks/handler.mjs stop
+ *   PermissionRequest:     node .harness/hooks/handler.mjs permission-request
+ *   PreCompact:            node .harness/hooks/handler.mjs pre-compact
+ *
+ * Log format: [timestamp] [hannah] [HookEvent:ToolName] [Category] ACTION | target | rule-id
+ *   Categories: file-protection | command-safety | secret-detection | mcp-safety |
+ *               xss-protection | prompt-scan | side-effect | session | config
  *
  * Environment variables:
  *   HANNAH_DEBUG=true    Enable debug logging
@@ -1126,6 +1133,31 @@ const BUILT_IN_RULES = [
     feedback: "You are modifying core module files. These changes require human review.",
     suggestions: ["Ensure changes are reviewed by a human", "Document the changes thoroughly"],
     match: { file_path: ["**/src/core/**", "**/src/kernel/**", "**/src/runtime/**"] } },
+  // ── Bash: env deletion ──
+  { name: "bash-env-delete", action: "deny",
+    feedback: "Deleting environment files via Bash is not allowed. These files may contain secrets.",
+    suggestions: ["Ask the human user to delete .env files", "Use git clean -f for untracked .env files"],
+    match: { command: ["rm -f .env", "rm -rf .env", "rm .env", "rm -f .env.*", "rm -rf .env.*", "del .env", "del .env.*"] } },
+  // ── Bash: git reset --hard ──
+  { name: "bash-git-reset-hard", action: "deny",
+    feedback: "git reset --hard is not allowed. This permanently discards uncommitted changes.",
+    suggestions: ["Use git stash instead", "Use git checkout to discard specific files"],
+    match: { command: ["git reset --hard"] } },
+  // ── Bash: git push main/master ─
+  { name: "bash-git-push-main", action: "deny",
+    feedback: "Direct push to main/master is not allowed. Use feature branches and pull requests.",
+    suggestions: ["Create a feature branch", "Use pull requests for code review"],
+    match: { command: ["git push origin main", "git push origin master", "git push main", "git push master"] } },
+  // ── Bash: protected file write via redirect ──
+  { name: "bash-protected-file-write", action: "deny",
+    feedback: "Writing to protected files via shell redirect is not allowed.",
+    suggestions: ["Use the Write tool instead (which has its own protection)", "Ask the human user to modify these files"],
+    match: { command: ["echo * > .env", "echo * >> .env", "cat * > .env", "cat * >> .env", "echo * > .env.*", "cat * > .env.*"] } },
+  // ── Bash: secret in command ──
+  { name: "bash-secret-in-command", action: "deny",
+    feedback: "Secrets detected in Bash command. Do not embed credentials in shell commands.",
+    suggestions: ["Use environment variables instead", "Use a secrets manager"],
+    match: { command: ["password = \\"", "password = '", "api_key = \\"", "api_key = '", "API_KEY = \\"", "API_KEY = '", "-----BEGIN RSA PRIVATE KEY-----"] } },
 ];
 
 /**
@@ -1232,7 +1264,7 @@ function matchDim(patterns, value) {
     const vLower = value.toLowerCase();
     // Short patterns (< 8 chars, no spaces) use word-boundary matching
     // to avoid overly broad matches (e.g. "commit" matching "committed").
-    if (pLower.length < 8 && !/\\s/.test(pLower)) {
+    if (pLower.length < 8 && !/\\s/.test(pLower) && /^[a-z0-9_-]+$/i.test(pLower)) {
       const re = new RegExp("(?:^|[^a-z])" + pLower.replace(/[.*+?^\${}()|[\\]\\\\]/g, "\\\\$&") + "(?:[^a-z]|$)");
       return re.test(vLower);
     }
@@ -1259,8 +1291,8 @@ function evaluateSemanticRules(input) {
 
     if (m.tool_name)    { total++; if (matchDim(m.tool_name, dims.tool_name)) matched++; }
     if (m.file_path)    { total++; if (matchDim(m.file_path, dims.file_path)) matched++; }
-    if (m.content)      { total++; if (matchDim(m.content, dims.content)) matched++; }
-    if (m.command)      { total++; if (matchDim(m.command, dims.command)) matched++; }
+    if (m.content)      { total++; if (matchDim(m.content, dims.content) || matchDim(m.content, dims.command)) matched++; }
+    if (m.command)      { total++; if (matchDim(m.command, dims.command) || matchDim(m.command, dims.content)) matched++; }
     if (m.mcp_server)   { total++; if (matchDim(m.mcp_server, dims.mcp_server)) matched++; }
     if (m.mcp_operation){ total++; if (matchDim(m.mcp_operation, dims.mcp_operation)) matched++; }
     if (m.file_type)    { total++; if (matchDim(m.file_type, dims.file_type)) matched++; }
@@ -1329,7 +1361,7 @@ async function main() {
     process.exit(0);
   }
 
-  // Handle user-prompt-submit mode: capture user message as session title
+  // Handle user-prompt-submit mode: capture user message as session title + scan for risks
   if (mode === "user-prompt-submit") {
     // Different agents use different field names for user input:
     // - Claude Code / Copilot / Qoder / Trae: user_message
@@ -1351,6 +1383,106 @@ async function main() {
       saveSessionTitle(userMessage, agentSessionId);
       // Also write a trace for prompt event
       writeTrace("prompt.before", { userMessage, agent: input.source || input.agent || "unknown" }, "allow", null, agentSessionId);
+
+      // ── Prompt Security Scan ──
+      const msgLower = userMessage.toLowerCase();
+      const secretPatterns = [
+        { pattern: "password\\s*=\\s*[\"']", rule: "prompt-secret-password", category: "prompt-scan" },
+        { pattern: "api[_\\s]?key\\s*=\\s*[\"']", rule: "prompt-secret-apikey", category: "prompt-scan" },
+        { pattern: "begin\\s+(rsa|ec|openssh)\\s+private\\s+key", rule: "prompt-secret-privatekey", category: "prompt-scan" },
+      ];
+      const dangerPatterns = [
+        { pattern: "force\\s*push|push\\s*-f|push\\s*--force", rule: "prompt-danger-git-force", category: "prompt-scan" },
+        { pattern: "drop\\s+table|drop\\s+database|truncate\\s+table", rule: "prompt-danger-db-drop", category: "prompt-scan" },
+        { pattern: "rm\\s+-rf\\s+[/~.*]", rule: "prompt-danger-rm", category: "prompt-scan" },
+        { pattern: "delete\\s+\\.env|remove\\s+\\.env", rule: "prompt-danger-env-delete", category: "prompt-scan" },
+      ];
+
+      let promptDecision = "allow";
+      let promptWarnings = [];
+
+      for (const sp of secretPatterns) {
+        if (new RegExp(sp.pattern, "i").test(userMessage)) {
+          log("[UserPromptSubmit] [" + sp.category + "] WARN | " + sp.rule + " | secret pattern in prompt");
+          writeTrace("prompt." + sp.rule, { userMessage: userMessage.substring(0, 100) }, "warn",
+            "Potential secret in user prompt: " + sp.rule, agentSessionId);
+          promptWarnings.push("Detected potential secret pattern: " + sp.rule);
+          if (promptDecision === "allow") promptDecision = "warn";
+        }
+      }
+
+      for (const dp of dangerPatterns) {
+        if (new RegExp(dp.pattern, "i").test(userMessage)) {
+          log("[UserPromptSubmit] [" + dp.category + "] WARN | " + dp.rule + " | dangerous intent in prompt");
+          writeTrace("prompt." + dp.rule, { userMessage: userMessage.substring(0, 100) }, "warn",
+            "Dangerous intent in user prompt: " + dp.rule, agentSessionId);
+          promptWarnings.push("Detected dangerous command intent: " + dp.rule);
+          if (promptDecision === "allow") promptDecision = "warn";
+        }
+      }
+
+      if (promptWarnings.length > 0) {
+        process.stdout.write(JSON.stringify({
+          decision: promptDecision,
+          reason: "Prompt security scan found " + promptWarnings.length + " issue(s)",
+          suggestions: promptWarnings
+        }));
+        process.stderr.write("[HOOK_WARN] " + promptWarnings.join("; ") + "\\n");
+        // warn is non-blocking, allow to continue
+        if (promptDecision === "warn") {
+          process.exit(0);
+        }
+      }
+    }
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle permission-request mode: check if permission involves protected resources
+  if (mode === "permission-request") {
+    log("[PermissionRequest] [session] Checking permission request...");
+    const agentSessionId = input.session_id || input.sessionId || null;
+    const permission = input.permission || input.permissionRequest || {};
+    const permissionType = permission.type || input.type || "";
+    const permissionTarget = permission.target || permission.file || input.file_path || "";
+
+    // Check if permission involves protected files
+    const protectedPatterns = [".env", ".env.", ".harness/", "agent.md", "CLAUDE.md", "COPILOT.md"];
+    const isProtected = protectedPatterns.some(p => permissionTarget.includes(p));
+
+    if (isProtected) {
+      log("[PermissionRequest] [config] DENY | permission for protected resource: " + permissionTarget);
+      writeTrace("permission.deny", { permissionType, target: permissionTarget }, "deny",
+        "Permission to access protected resource denied: " + permissionTarget, agentSessionId);
+      process.stdout.write(JSON.stringify({
+        decision: "deny",
+        reason: "Permission denied: access to protected resource",
+        stopReason: "Cannot grant permission to modify or access protected files: " + permissionTarget,
+        suggestions: ["Ask the human user to grant this permission manually"]
+      }));
+      process.stderr.write("[HOOK_DENY] Cannot grant permission to protected resource: " + permissionTarget + "\\n");
+      process.exit(2);
+    }
+
+    log("[PermissionRequest] [session] ALLOW | " + permissionType + " | " + permissionTarget);
+    writeTrace("permission.allow", { permissionType, target: permissionTarget }, "allow", null, agentSessionId);
+    process.stdout.write(JSON.stringify({ decision: "allow" }));
+    process.exit(0);
+  }
+
+  // Handle pre-compact mode: save session state before context compaction
+  if (mode === "pre-compact") {
+    log("[PreCompact] [session] Saving session state before compaction...");
+    const agentSessionId = input.session_id || input.sessionId || null;
+    try {
+      // Write a compaction marker to trace
+      writeTrace("session.pre_compact", {
+        timestamp: new Date().toISOString(),
+        reason: "context window approaching limit"
+      }, "allow", null, agentSessionId);
+      log("[PreCompact] [session] Session state saved");
+    } catch (err) {
+      debug("Failed to save pre-compact state:", err.message);
     }
     process.stdout.write(JSON.stringify({ decision: "allow" }));
     process.exit(0);
@@ -1606,8 +1738,33 @@ async function main() {
     // Exit code convention: 0=allow, 2=deny (matches HookExecutor and all V1 adapters)
     process.exit(finalDecision === "deny" ? 2 : 0);
   } else {
-    // post-tool-use: observation only
-    writeTrace("tool.after", { toolName }, "allow", "");
+    // post-tool-use: observation + side-effect verification
+    const toolOutput = input.tool_output || "";
+    writeTrace("tool.after", { toolName, output: String(toolOutput).substring(0, 200) }, "allow", "");
+
+    // Side-effect verification: check if Bash modified protected files
+    if (toolName === "Bash" && phase === "after") {
+      const bashCommand = input.tool_input?.command || "";
+      const protectedFilePatterns = [".env", ".env.", ".harness/", "agent.md", "AGENT.md", "CLAUDE.md"];
+      for (const pattern of protectedFilePatterns) {
+        if (bashCommand.includes(pattern) && (bashCommand.includes("rm ") || bashCommand.includes("del ") || bashCommand.includes("> ") || bashCommand.includes(">> "))) {
+          const checkFile = path.join(PROJECT_ROOT, pattern.replace("**/", "").replace("*", ""));
+          try {
+            if (fs.existsSync(checkFile)) {
+              const mtime = fs.statSync(checkFile).mtimeMs;
+              const now = Date.now();
+              // If file was modified within last 5 seconds, flag it
+              if (now - mtime < 5000) {
+                log("[PostToolUse:Bash] [side-effect] WARN | protected file touched: " + pattern + " by command: " + bashCommand.substring(0, 80));
+                writeTrace("side-effect.protected-file", { pattern, command: bashCommand }, "warn",
+                  "Bash command may have modified protected file: " + pattern);
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+
     process.exit(0);
   }
 }

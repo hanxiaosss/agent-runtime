@@ -65,33 +65,30 @@ export const AGENTS: AgentConfig[] = [
     configPath: ".claude/settings.json",
     hookConfig: `{
   "hooks": {
-    "PreToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node .harness/hooks/handler.mjs pre-tool-use"
-      }]
-    }],
+    "PreToolUse": [
+      { "matcher": "Write|Edit|MultiEdit", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-tool-use", "timeout": 15, "statusMessage": "Checking file write policies..." }] },
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-tool-use", "timeout": 15, "statusMessage": "Checking shell command safety..." }] },
+      { "matcher": "Read|Glob|Grep", "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-tool-use", "timeout": 10, "statusMessage": "Auditing sensitive file access..." }] }
+    ],
     "PostToolUse": [{
       "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node .harness/hooks/handler.mjs post-tool-use"
-      }]
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs post-tool-use", "timeout": 15, "statusMessage": "Verifying tool side effects..." }]
     }],
     "UserPromptSubmit": [{
       "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node .harness/hooks/handler.mjs user-prompt-submit"
-      }]
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs user-prompt-submit", "timeout": 15, "statusMessage": "Scanning prompt for security risks..." }]
     }],
     "Stop": [{
       "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node .harness/hooks/handler.mjs stop"
-      }]
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs stop", "timeout": 30, "statusMessage": "Running pre-stop validation..." }]
+    }],
+    "PermissionRequest": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs permission-request", "timeout": 15, "statusMessage": "Checking permission request..." }]
+    }],
+    "PreCompact": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "node .harness/hooks/handler.mjs pre-compact", "timeout": 10, "statusMessage": "Saving session state before compaction..." }]
     }]
   }
 }`,
@@ -104,46 +101,46 @@ export const AGENTS: AgentConfig[] = [
         hooks: {
           PreToolUse: [
             {
-              matcher: "",
-              hooks: [
-                {
-                  type: "command",
-                  command: "node .harness/hooks/handler.mjs pre-tool-use",
-                },
-              ],
+              matcher: "Write|Edit|MultiEdit",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use", timeout: 15, statusMessage: "Checking file write policies..." }],
+            },
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use", timeout: 15, statusMessage: "Checking shell command safety..." }],
+            },
+            {
+              matcher: "Read|Glob|Grep",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-tool-use", timeout: 10, statusMessage: "Auditing sensitive file access..." }],
             },
           ],
           PostToolUse: [
             {
               matcher: "",
-              hooks: [
-                {
-                  type: "command",
-                  command: "node .harness/hooks/handler.mjs post-tool-use",
-                },
-              ],
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs post-tool-use", timeout: 15, statusMessage: "Verifying tool side effects..." }],
             },
           ],
           UserPromptSubmit: [
             {
               matcher: "",
-              hooks: [
-                {
-                  type: "command",
-                  command: "node .harness/hooks/handler.mjs user-prompt-submit",
-                },
-              ],
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs user-prompt-submit", timeout: 15, statusMessage: "Scanning prompt for security risks..." }],
             },
           ],
           Stop: [
             {
               matcher: "",
-              hooks: [
-                {
-                  type: "command",
-                  command: "node .harness/hooks/handler.mjs stop",
-                },
-              ],
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs stop", timeout: 30, statusMessage: "Running pre-stop validation..." }],
+            },
+          ],
+          PermissionRequest: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs permission-request", timeout: 15, statusMessage: "Checking permission request..." }],
+            },
+          ],
+          PreCompact: [
+            {
+              matcher: "",
+              hooks: [{ type: "command", command: "node .harness/hooks/handler.mjs pre-compact", timeout: 10, statusMessage: "Saving session state before compaction..." }],
             },
           ],
         },
