@@ -56,8 +56,7 @@ name: protected-files
 description: Prevent modification of sensitive configuration and lock files
 
 rules:
-    id: SEC-001
-
+  - id: SEC-001
     when: code.before_modify
     match:
       - field: filePath
@@ -71,8 +70,7 @@ rules:
       - "Ask the human user to edit .env files"
       - "Use environment variables instead"
 
-    id: SEC-002
-
+  - id: SEC-002
     when: code.before_modify
     match:
       - field: filePath
@@ -85,8 +83,7 @@ rules:
     suggestions:
       - "Use npm install, pnpm add, yarn add, etc."
 
-    id: ARCH-001
-
+  - id: ARCH-001
     when: code.before_modify
     match:
       - field: filePath
@@ -98,8 +95,7 @@ rules:
     suggestions:
       - "Ask for human review before modifying core files"
 
-    id: ARCH-002
-
+  - id: ARCH-002
     when: code.before_modify
     match:
       - field: filePath
@@ -120,8 +116,7 @@ name: mcp-safety
 description: Controls agent access to MCP servers and operations
 
 rules:
-    id: MCP-001
-
+  - id: MCP-001
     when: mcp.before
     match:
       - field: server
@@ -137,8 +132,7 @@ rules:
     suggestions:
       - "Use the application API instead of direct database access"
 
-    id: MCP-002
-
+  - id: MCP-002
     when: mcp.before
     match:
       - field: server
@@ -149,8 +143,7 @@ rules:
       - "Ensure queries are read-only"
       - "Don't expose sensitive data"
 
-    id: MCP-003
-
+  - id: MCP-003
     when: mcp.before
     match:
       - field: server
@@ -173,8 +166,7 @@ name: git-safety
 description: Prevents dangerous git operations by agents
 
 rules:
-    id: GIT-001
-
+  - id: GIT-001
     when: tool.before
     match:
       - field: toolName
@@ -194,8 +186,7 @@ rules:
     suggestions:
       - "Use git push --force-with-lease instead"
 
-    id: GIT-002
-
+  - id: GIT-002
     when: tool.before
     match:
       - field: toolName
@@ -212,8 +203,7 @@ rules:
       - "Use git stash instead"
       - "Use git checkout to discard specific files"
 
-    id: GIT-003
-
+  - id: GIT-003
     when: tool.before
     match:
       - field: toolName
