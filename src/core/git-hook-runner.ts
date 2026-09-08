@@ -5,6 +5,7 @@
  */
 
 import { spawn } from "child_process";
+import path from "path";
 import {
   ArtifactLifecycleManager,
   LifecycleConfig,
@@ -23,6 +24,7 @@ export interface HookConfig {
     archiveBeforeClear?: boolean;
     resetDashboard?: boolean;
     logCommit?: boolean;
+    checkStagedFiles?: boolean;
   };
   callbacks?: CallbackConfig[];
 }
@@ -133,6 +135,15 @@ export class GitHookRunner {
       const logResult = await this.executeLogCommit();
       result.builtinResults.push(logResult);
     }
+
+    // Check staged files for syntax errors (pre-commit)
+    if (builtin?.checkStagedFiles) {
+      const checkResult = await this.executeCheckStagedFiles();
+      result.builtinResults.push(checkResult);
+      if (!checkResult.success) {
+        result.success = false;
+      }
+    }
   }
 
   /**
@@ -226,6 +237,196 @@ export class GitHookRunner {
         message,
       };
     }
+  }
+
+  /**
+   * Execute staged files syntax check (pre-commit)
+   */
+  private async executeCheckStagedFiles(): Promise<BuiltinResult> {
+    try {
+      // Get staged files
+      const stagedFilesOutput = await this.runGitCommand(
+        "diff --cached --name-only --diff-filter=ACM",
+      );
+      const stagedFiles = stagedFilesOutput
+        .trim()
+        .split("\n")
+        .filter((f) => f.length > 0);
+
+      if (stagedFiles.length === 0) {
+        console.log(`  🔍 [builtin] check-staged-files: No staged files to check`);
+        return {
+          name: "check-staged-files",
+          success: true,
+          message: "No staged files to check",
+        };
+      }
+
+      // Filter to checkable file types
+      const checkableExts = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".json"];
+      const filesToCheck = stagedFiles.filter((f) =>
+        checkableExts.some((ext) => f.endsWith(ext)),
+      );
+
+      if (filesToCheck.length === 0) {
+        console.log(
+          `  🔍 [builtin] check-staged-files: ${stagedFiles.length} staged file(s), none checkable`,
+        );
+        return {
+          name: "check-staged-files",
+          success: true,
+          message: `No checkable files among ${stagedFiles.length} staged`,
+        };
+      }
+
+      console.log(
+        `  🔍 [builtin] check-staged-files: Checking ${filesToCheck.length} file(s)...`,
+      );
+
+      const errors: Array<{ file: string; error: string }> = [];
+
+      for (const file of filesToCheck) {
+        const filePath = path.join(this.targetDir, file);
+        const fs = await import("fs");
+
+        if (!fs.existsSync(filePath)) continue;
+
+        const content = fs.readFileSync(filePath, "utf-8");
+        const ext = path.extname(file).toLowerCase();
+
+        // JSON check
+        if (ext === ".json") {
+          try {
+            JSON.parse(content);
+          } catch (e) {
+            errors.push({ file, error: e instanceof Error ? e.message : String(e) });
+          }
+          continue;
+        }
+
+        // JS/TS check — use Function constructor for JS, basic bracket matching for TS
+        if (ext === ".js" || ext === ".mjs" || ext === ".jsx") {
+          try {
+            new Function(content);
+          } catch (e) {
+            errors.push({ file, error: e instanceof Error ? e.message : String(e) });
+          }
+          continue;
+        }
+
+        // TS/TSX — basic bracket matching (full TS parsing needs tsc)
+        if (ext === ".ts" || ext === ".tsx") {
+          const bracketErrors = this.checkBracketBalance(content);
+          if (bracketErrors) {
+            errors.push({ file, error: bracketErrors });
+          }
+        }
+      }
+
+      if (errors.length > 0) {
+        const errorList = errors
+          .map((e) => `    ❌ ${e.file}: ${e.error.split("\n")[0]}`)
+          .join("\n");
+        console.log(`  ❌ [builtin] check-staged-files: ${errors.length} error(s)\n${errorList}`);
+        return {
+          name: "check-staged-files",
+          success: false,
+          message: `Syntax errors in ${errors.length} file(s)`,
+          details: { errors },
+        };
+      }
+
+      console.log(`  ✅ [builtin] check-staged-files: All ${filesToCheck.length} file(s) passed`);
+      return {
+        name: "check-staged-files",
+        success: true,
+        message: `Checked ${filesToCheck.length} file(s), all passed`,
+        details: { filesChecked: filesToCheck.length },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`  ❌ [builtin] check-staged-files failed: ${message}`);
+      return {
+        name: "check-staged-files",
+        success: false,
+        message,
+      };
+    }
+  }
+
+  /**
+   * Basic bracket balance check for TS/TSX files
+   */
+  private checkBracketBalance(content: string): string | null {
+    let braces = 0,
+      parens = 0,
+      brackets = 0;
+    let inString: string | null = null;
+    let inLineComment = false;
+    let inBlockComment = false;
+
+    for (let i = 0; i < content.length; i++) {
+      const ch = content[i];
+      const next = content[i + 1];
+
+      if (inLineComment) {
+        if (ch === "\n") inLineComment = false;
+        continue;
+      }
+      if (inBlockComment) {
+        if (ch === "*" && next === "/") {
+          inBlockComment = false;
+          i++;
+        }
+        continue;
+      }
+      if (inString) {
+        if (ch === "\\") {
+          i++;
+          continue;
+        }
+        if (ch === inString) inString = null;
+        continue;
+      }
+
+      if (ch === "/" && next === "/") {
+        inLineComment = true;
+        i++;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        inBlockComment = true;
+        i++;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === "`") {
+        inString = ch;
+        continue;
+      }
+
+      if (ch === "{") braces++;
+      if (ch === "}") braces--;
+      if (ch === "(") parens++;
+      if (ch === ")") parens--;
+      if (ch === "[") brackets++;
+      if (ch === "]") brackets--;
+    }
+
+    const issues: string[] = [];
+    if (braces !== 0)
+      issues.push(
+        `${braces > 0 ? "missing " + braces + " }" : "extra " + Math.abs(braces) + " }"}`,
+      );
+    if (parens !== 0)
+      issues.push(
+        `${parens > 0 ? "missing " + parens + " )" : "extra " + Math.abs(parens) + " )"}`,
+      );
+    if (brackets !== 0)
+      issues.push(
+        `${brackets > 0 ? "missing " + brackets + " ]" : "extra " + Math.abs(brackets) + " ]"}`,
+      );
+
+    return issues.length > 0 ? issues.join(", ") : null;
   }
 
   /**

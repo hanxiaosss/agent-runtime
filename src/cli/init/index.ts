@@ -9,6 +9,7 @@ import {
   PROTECTED_FILES_YAML,
   MCP_SAFETY_YAML,
   GIT_SAFETY_YAML,
+  REDLINE_YAML,
   SEMANTIC_RULES_YAML,
   HANDLER_MJS,
   README_MD,
@@ -164,6 +165,7 @@ export async function runInit(args: string[]): Promise<void> {
   // Write files
   const files: Array<[string, string]> = [
     ["config.yaml", CONFIG_YAML.replace("{project}", projectName).replace("{agent}", selectedAgent.value)],
+    ["policies/redline.yaml", REDLINE_YAML],
     ["policies/protected-files.yaml", PROTECTED_FILES_YAML],
     ["policies/mcp-safety.yaml", MCP_SAFETY_YAML],
     ["policies/git-safety.yaml", GIT_SAFETY_YAML],

@@ -232,6 +232,279 @@ rules:
       - "Use pull requests for code review"
 `;
 
+export const REDLINE_YAML = `# Redline Policy
+# Non-negotiable guard rails that must never be crossed by any agent.
+# These rules protect critical files, block dangerous operations,
+# and prevent secret leakage.
+
+name: redline
+description: >-
+  Non-negotiable guard rails. Protects agent instruction files,
+  harness configuration, environment files, lock files, production
+  configs, and blocks dangerous shell / database / secret patterns.
+
+rules:
+  # ── Agent instruction files ──────────────────────────────────────
+  - id: REDLINE-001
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/agent.md"
+          - "**/AGENT.md"
+          - "**/.agent.md"
+          - "**/agents.md"
+          - "**/AGENTS.md"
+          - "**/CLAUDE.md"
+          - "**/COPILOT.md"
+          - "**/.cursorrules"
+          - "**/.cursor/rules.md"
+    action: deny
+    reason: Agent instruction files are read-only for agents
+    feedback: "You cannot modify agent instruction files. These define your behavior and must only be changed by the human user."
+
+  # ── Harness configuration ────────────────────────────────────────
+  - id: REDLINE-002
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/.harness/**"
+    action: deny
+    reason: Harness configuration is read-only for agents
+    feedback: "You cannot modify .harness/ configuration. This directory contains runtime guard policies and hooks."
+
+  # ── Environment files ────────────────────────────────────────────
+  - id: REDLINE-003
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/.env"
+          - "**/.env.*"
+          - "**/*.env"
+    action: deny
+    reason: Environment files may contain secrets
+    feedback: "Environment files are protected. They may contain secrets and must be edited manually."
+
+  # ── Lock files ───────────────────────────────────────────────────
+  - id: REDLINE-004
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/package-lock.json"
+          - "**/pnpm-lock.yaml"
+          - "**/yarn.lock"
+          - "**/poetry.lock"
+          - "**/Gemfile.lock"
+          - "**/Cargo.lock"
+          - "**/go.sum"
+    action: deny
+    reason: Lock files are auto-generated
+    feedback: "Lock files are auto-generated. Use the package manager instead of editing directly."
+
+  # ── Production config ────────────────────────────────────────────
+  - id: REDLINE-005
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/production.yaml"
+          - "**/production.yml"
+          - "**/production.json"
+          - "**/production.env"
+          - "**/prod.yaml"
+          - "**/prod.yml"
+          - "**/prod.json"
+          - "**/prod.env"
+          - "**/production/**"
+          - "**/prod/**"
+    action: deny
+    reason: Production configuration requires deployment pipeline
+    feedback: "Production configuration must be changed through the deployment pipeline, not directly."
+
+  # ── Dangerous shell: rm ──────────────────────────────────────────
+  - id: REDLINE-006
+    when: tool.before
+    match:
+      - field: input.command
+        pattern:
+          - "rm -rf /"
+          - "rm -rf ~"
+          - "rm -rf ."
+          - "rm -rf *"
+    action: modify
+    reason: Destructive rm commands are blocked
+    feedback: "Destructive rm commands are blocked."
+    modifiedInput:
+      command: "echo 'Blocked: dangerous rm command'"
+
+  # ── Dangerous shell: git force push ──────────────────────────────
+  - id: REDLINE-007
+    when: tool.before
+    match:
+      - field: input.command
+        pattern:
+          - "git push --force"
+          - "git push -f"
+    action: modify
+    reason: Force push is not allowed
+    feedback: "Force push is not allowed. Use regular push or push with lease."
+    modifiedInput:
+      command: "git push --force-with-lease"
+
+  # ── Dangerous DB operations ──────────────────────────────────────
+  - id: REDLINE-008
+    when: tool.before
+    match:
+      - field: input.content
+        pattern:
+          - "DROP TABLE"
+          - "DROP DATABASE"
+          - "TRUNCATE TABLE"
+    action: modify
+    reason: Destructive database operations are blocked
+    feedback: "Destructive database operations (DROP/TRUNCATE) are blocked."
+    modifiedInput:
+      content: "-- Blocked: Use ALTER TABLE or conditional DELETE instead"
+
+  # ── Secret: password ─────────────────────────────────────────────
+  - id: REDLINE-009
+    when: tool.before
+    match:
+      - field: input.content
+        pattern:
+          - 'password = "'
+          - "password = '"
+          - 'passwd = "'
+          - "passwd = '"
+          - 'pwd = "'
+          - "pwd = '"
+    action: deny
+    reason: Hardcoded password detected
+    feedback: "Hardcoded passwords detected. Use environment variables or a secrets manager."
+
+  # ── Secret: API key ──────────────────────────────────────────────
+  - id: REDLINE-010
+    when: tool.before
+    match:
+      - field: input.content
+        pattern:
+          - 'api_key = "'
+          - "api_key = '"
+          - 'apiKey = "'
+          - "apiKey = '"
+          - 'API_KEY = "'
+          - "API_KEY = '"
+    action: deny
+    reason: Hardcoded API key detected
+    feedback: "Hardcoded API keys detected. Use environment variables or a secrets manager."
+
+  # ── Secret: private key ──────────────────────────────────────────
+  - id: REDLINE-011
+    when: tool.before
+    match:
+      - field: input.content
+        pattern:
+          - "-----BEGIN RSA PRIVATE KEY-----"
+          - "-----BEGIN EC PRIVATE KEY-----"
+          - "-----BEGIN OPENSSH PRIVATE KEY-----"
+    action: deny
+    reason: Private key embedded in source
+    feedback: "Private keys must not be embedded in source code."
+
+  # ── MCP: database write ──────────────────────────────────────────
+  - id: REDLINE-012
+    when: mcp.before
+    match:
+      - field: server
+        pattern:
+          - "database"
+          - "db"
+          - "sql"
+          - "postgres"
+          - "mysql"
+          - "mongodb"
+      - field: operation
+        pattern:
+          - "write"
+          - "delete"
+          - "drop"
+          - "truncate"
+          - "alter"
+          - "update"
+          - "insert"
+          - "execute"
+    action: deny
+    reason: Direct database write via MCP is not allowed
+    feedback: "Direct database write via MCP is not allowed. Use the application API layer."
+
+  # ── Frontend: React XSS ──────────────────────────────────────────
+  - id: REDLINE-013
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/*.tsx"
+          - "**/*.jsx"
+          - "**/*.ts"
+          - "**/*.js"
+      - field: input.content
+        pattern:
+          - "dangerouslySetInnerHTML"
+    action: warn
+    reason: dangerouslySetInnerHTML can lead to XSS
+    feedback: "dangerouslySetInnerHTML can lead to XSS. Ensure content is sanitized."
+
+  # ── Frontend: Vue XSS ────────────────────────────────────────────
+  - id: REDLINE-014
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/*.vue"
+      - field: input.content
+        pattern:
+          - "v-html"
+    action: warn
+    reason: v-html can lead to XSS
+    feedback: "v-html can lead to XSS. Use text interpolation when possible."
+
+  # ── eval() injection ─────────────────────────────────────────────
+  - id: REDLINE-015
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/*.ts"
+          - "**/*.js"
+          - "**/*.tsx"
+          - "**/*.jsx"
+          - "**/*.py"
+          - "**/*.rb"
+      - field: input.content
+        pattern:
+          - "eval("
+          - "new Function("
+    action: warn
+    reason: eval() can lead to code injection
+    feedback: "eval() can lead to code injection. Consider safer alternatives."
+
+  # ── Core module protection ───────────────────────────────────────
+  - id: REDLINE-016
+    when: tool.before
+    match:
+      - field: input.file_path
+        pattern:
+          - "**/src/core/**"
+          - "**/src/kernel/**"
+          - "**/src/runtime/**"
+    action: warn
+    reason: Core module files require human review
+    feedback: "You are modifying core module files. These changes require human review."
+`;
+
 export const SEMANTIC_RULES_YAML = `# Semantic Rules — Multi-dimensional hook matching
 #
 # Unlike declarative policies (which match on event payload fields),
@@ -1399,22 +1672,22 @@ async function main() {
       // ── Prompt Security Scan ──
       const msgLower = userMessage.toLowerCase();
       const secretPatterns = [
-        { pattern: "password\\s*=\\s*[\"']", rule: "prompt-secret-password", category: "prompt-scan" },
-        { pattern: "api[_\\s]?key\\s*=\\s*[\"']", rule: "prompt-secret-apikey", category: "prompt-scan" },
-        { pattern: "begin\\s+(rsa|ec|openssh)\\s+private\\s+key", rule: "prompt-secret-privatekey", category: "prompt-scan" },
+        { pattern: /password\\s*=\\s*["']/i, rule: "prompt-secret-password", category: "prompt-scan" },
+        { pattern: /api[_\\s]?key\\s*=\\s*["']/i, rule: "prompt-secret-apikey", category: "prompt-scan" },
+        { pattern: /begin\\s+(rsa|ec|openssh)\\s+private\\s+key/i, rule: "prompt-secret-privatekey", category: "prompt-scan" },
       ];
       const dangerPatterns = [
-        { pattern: "force\\s*push|push\\s*-f|push\\s*--force", rule: "prompt-danger-git-force", category: "prompt-scan" },
-        { pattern: "drop\\s+table|drop\\s+database|truncate\\s+table", rule: "prompt-danger-db-drop", category: "prompt-scan" },
-        { pattern: "rm\\s+-rf\\s+[/~.*]", rule: "prompt-danger-rm", category: "prompt-scan" },
-        { pattern: "delete\\s+\\.env|remove\\s+\\.env", rule: "prompt-danger-env-delete", category: "prompt-scan" },
+        { pattern: /force\\s*push|push\\s*-f|push\\s*--force/i, rule: "prompt-danger-git-force", category: "prompt-scan" },
+        { pattern: /drop\\s+table|drop\\s+database|truncate\\s+table/i, rule: "prompt-danger-db-drop", category: "prompt-scan" },
+        { pattern: /rm\\s+-rf\\s+[\\/~.*]/i, rule: "prompt-danger-rm", category: "prompt-scan" },
+        { pattern: /delete\\s+\\.env|remove\\s+\\.env/i, rule: "prompt-danger-env-delete", category: "prompt-scan" },
       ];
 
       let promptDecision = "allow";
       let promptWarnings = [];
 
       for (const sp of secretPatterns) {
-        if (new RegExp(sp.pattern, "i").test(userMessage)) {
+        if (sp.pattern.test(userMessage)) {
           log("[UserPromptSubmit] [" + sp.category + "] WARN | " + sp.rule + " | secret pattern in prompt");
           writeTrace("prompt." + sp.rule, { userMessage: userMessage.substring(0, 100) }, "warn",
             "Potential secret in user prompt: " + sp.rule, agentSessionId);
@@ -1424,7 +1697,7 @@ async function main() {
       }
 
       for (const dp of dangerPatterns) {
-        if (new RegExp(dp.pattern, "i").test(userMessage)) {
+        if (dp.pattern.test(userMessage)) {
           log("[UserPromptSubmit] [" + dp.category + "] WARN | " + dp.rule + " | dangerous intent in prompt");
           writeTrace("prompt." + dp.rule, { userMessage: userMessage.substring(0, 100) }, "warn",
             "Dangerous intent in user prompt: " + dp.rule, agentSessionId);
