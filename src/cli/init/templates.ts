@@ -22,9 +22,8 @@ policies:
   - policies
 
 # Git Hook interception and artifact lifecycle management
-# Run 'hannah git-hooks install' to activate
 gitHooks:
-  enabled: false
+  enabled: true
   lifecycle:
     # Artifacts cleared on each git commit (pre-commit)
     commitScoped:
