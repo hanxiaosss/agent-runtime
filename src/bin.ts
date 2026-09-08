@@ -34,6 +34,7 @@ import { runLearn } from "./cli/learn.js";
 import { runGitHooks } from "./cli/git-hooks.js";
 import { runCleanLinks } from "./cli/clean-links.js";
 import { runVersion } from "./cli/version.js";
+import { runGuardian } from "./cli/guardian.js";
 
 // Check for post-install marker and show welcome message
 const __filename = fileURLToPath(import.meta.url);
@@ -109,6 +110,11 @@ function printHelp(): void {
       status                  Show current git hooks status
       run <hook-name>         Manually trigger a hook's callback chain
       list                    List all configured callbacks
+    guardian [subcommand]   Multi-layer fallback protection
+      start                   Start all protection layers
+      stop                    Stop all protection layers
+      status                  Show protection status
+      check                   Run single integrity check
     learn [subcommand]      Self-learning intelligence
       full                  Full analysis (patterns + anomalies + recommendations)
       patterns              Behavior pattern analysis
@@ -209,6 +215,10 @@ switch (command) {
       console.error("Error:", err.message);
       process.exit(1);
     });
+    break;
+
+  case "guardian":
+    runGuardian(args.slice(1));
     break;
 
   case "clean-links":

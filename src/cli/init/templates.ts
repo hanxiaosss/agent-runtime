@@ -1596,8 +1596,8 @@ async function main() {
   if (mode === "task-created") {
     const agentSessionId = input.session_id || input.sessionId || null;
     const taskDesc = input.task_description || input.description || input.task || "";
-    log("[TaskCreated] [session] Task created: " + taskDesc.substring(0, 80));
-    writeTrace("session.task_created", { taskDescription: taskDesc.substring(0, 200) }, "allow", null, agentSessionId);
+    log("[TaskCreated] [task] Task created: " + taskDesc.substring(0, 80));
+    writeTrace("task.start", { taskDescription: taskDesc.substring(0, 200) }, "allow", null, agentSessionId);
     process.stdout.write(JSON.stringify({ decision: "allow" }));
     process.exit(0);
   }
@@ -1606,8 +1606,8 @@ async function main() {
   if (mode === "task-completed") {
     const agentSessionId = input.session_id || input.sessionId || null;
     const taskDesc = input.task_description || input.description || input.task || "";
-    log("[TaskCompleted] [session] Task completed: " + taskDesc.substring(0, 80));
-    writeTrace("session.task_completed", { taskDescription: taskDesc.substring(0, 200) }, "allow", null, agentSessionId);
+    log("[TaskCompleted] [task] Task completed: " + taskDesc.substring(0, 80));
+    writeTrace("task.complete", { taskDescription: taskDesc.substring(0, 200) }, "allow", null, agentSessionId);
     process.stdout.write(JSON.stringify({ decision: "allow" }));
     process.exit(0);
   }
@@ -1616,8 +1616,8 @@ async function main() {
   if (mode === "subagent-stop") {
     const agentSessionId = input.session_id || input.sessionId || null;
     const subagentName = input.subagent_name || input.agent_name || input.name || "unknown";
-    log("[SubagentStop] [session] Subagent stopped: " + subagentName);
-    writeTrace("session.subagent_stop", { subagentName }, "allow", null, agentSessionId);
+    log("[SubagentStop] [subagent] Subagent stopped: " + subagentName);
+    writeTrace("subagent.stop", { subagentName }, "allow", null, agentSessionId);
     const subagentOutput = input.output || input.result || "";
     if (subagentOutput) {
       const semRule = evaluateSemanticRules({ tool_name: "SubagentStop", tool_input: { content: subagentOutput, command: subagentOutput } });

@@ -23,9 +23,21 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { extractIntent, loadIntentRules, type Intent, type IntentRule } from "../intent/intent-extractor.js";
-import { loadArchitectureConfig, checkToolArchitecture, type ArchitectureConfig } from "../architecture/architecture-matcher.js";
-import { scanFileWithWarnings, type ScanResult } from "../scanner/file-scanner.js";
+import {
+  extractIntent,
+  loadIntentRules,
+  type Intent,
+  type IntentRule,
+} from "../intent/intent-extractor.js";
+import {
+  loadArchitectureConfig,
+  checkToolArchitecture,
+  type ArchitectureConfig,
+} from "../architecture/architecture-matcher.js";
+import {
+  scanFileWithWarnings,
+  type ScanResult,
+} from "../scanner/file-scanner.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,6 +101,12 @@ interface TraceEntry {
   duration?: number;
   modifiedFiles?: string[];
   exitCode?: number;
+  // MCP-specific fields
+  mcpServer?: string;
+  mcpOperation?: string;
+  // Task-specific fields
+  taskDescription?: string;
+  subagentName?: string;
 }
 
 interface HookDecision {
@@ -116,7 +134,9 @@ const SEMANTIC_DIR = path.join(HARNESS_DIR, "semantic-rules");
 async function main(): Promise<void> {
   const phase = process.argv[2]; // "pre-tool-use" | "post-tool-use" | "stop"
   if (!phase) {
-    log("Usage: codex-handler.js <pre-tool-use|post-tool-use|stop|user-prompt-submit>");
+    log(
+      "Usage: codex-handler.js <pre-tool-use|post-tool-use|stop|user-prompt-submit>",
+    );
     process.exit(1);
   }
 
@@ -128,7 +148,10 @@ async function main(): Promise<void> {
 
   if (phase === "pre-tool-use") {
     const result = evaluatePreToolUse(input);
-    writeTrace("tool.before", input, result);
+    // Detect MCP calls and use mcp.before event instead of tool.before
+    const mcpInfo = extractMcpInfo(input.tool_name);
+    const eventName = mcpInfo ? "mcp.before" : "tool.before";
+    writeTrace(eventName, input, result, mcpInfo);
 
     if (result.decision === "deny") {
       const feedback = result.feedback || result.reason || "Blocked by policy";
@@ -165,7 +188,10 @@ async function main(): Promise<void> {
       modifiedFiles: extractModifiedFiles(input),
       exitCode: input.exit_code as number | undefined,
     };
-    writeTrace("tool.after", input, traceResult);
+    // Detect MCP calls and use mcp.after event instead of tool.after
+    const mcpInfo = extractMcpInfo(input.tool_name);
+    const eventName = mcpInfo ? "mcp.after" : "tool.after";
+    writeTrace(eventName, input, traceResult, mcpInfo);
     process.exit(0);
   }
 
@@ -174,7 +200,9 @@ async function main(): Promise<void> {
     writeTrace("confirm.before", input, result);
 
     if (result.decision === "deny") {
-      process.stderr.write((result.feedback || result.reason || "Blocked") + "\n");
+      process.stderr.write(
+        (result.feedback || result.reason || "Blocked") + "\n",
+      );
       process.exit(2);
     }
     process.exit(0);
@@ -190,10 +218,13 @@ async function main(): Promise<void> {
       (input as any).message ||
       (input as any).content ||
       "";
-    const sessionId = (input as any).session_id || (input as any).sessionId || null;
+    const sessionId =
+      (input as any).session_id || (input as any).sessionId || null;
 
     if (userMessage) {
-      log(`[user-prompt-submit] captured: ${userMessage.substring(0, 80)}${userMessage.length > 80 ? "..." : ""}`);
+      log(
+        `[user-prompt-submit] captured: ${userMessage.substring(0, 80)}${userMessage.length > 80 ? "..." : ""}`,
+      );
       // Save session metadata (title + round)
       saveSessionTitle(userMessage, sessionId);
       // Write prompt.before trace
@@ -249,9 +280,12 @@ function evaluatePreToolUse(input: CodexHookInput): HookDecision {
 
 function evaluateIntentRules(intent: Intent): HookDecision {
   const rules = loadIntentRules(HARNESS_DIR);
-  
+
   for (const rule of rules) {
-    if (rule.intent === intent.type && intent.confidence >= rule.minConfidence) {
+    if (
+      rule.intent === intent.type &&
+      intent.confidence >= rule.minConfidence
+    ) {
       return {
         decision: rule.action,
         reason: `Intent rule "${rule.name}" matched: ${intent.type}`,
@@ -261,7 +295,7 @@ function evaluateIntentRules(intent: Intent): HookDecision {
       };
     }
   }
-  
+
   return { decision: "allow" };
 }
 
@@ -283,7 +317,9 @@ function evaluateArchitecture(input: CodexHookInput): HookDecision {
 
 function evaluateFileSensitivity(input: CodexHookInput): HookDecision {
   const toolInput = input.tool_input || {};
-  const filePath = String(toolInput.file_path || toolInput.path || toolInput.file || "");
+  const filePath = String(
+    toolInput.file_path || toolInput.path || toolInput.file || "",
+  );
   if (!filePath) return { decision: "allow" };
 
   const scan = scanFileWithWarnings(filePath);
@@ -420,7 +456,10 @@ function matchesRule(rule: PolicyRule, input: CodexHookInput): boolean {
   return true;
 }
 
-function matchesSemanticRule(rule: SemanticRule, input: CodexHookInput): boolean {
+function matchesSemanticRule(
+  rule: SemanticRule,
+  input: CodexHookInput,
+): boolean {
   const m = rule.match;
   const toolName = input.tool_name || "";
   const toolInput = input.tool_input || {};
@@ -463,28 +502,28 @@ function resolveField(field: string, input: CodexHookInput): unknown {
   // Supports both top-level fields and nested paths
   const fieldAliases: Record<string, string> = {
     // Top-level field aliases
-    "toolName": "tool_name",
-    "toolInput": "tool_input",
-    "input": "tool_input",
-    "toolOutput": "tool_output",
-    "output": "tool_output",
-    "sessionId": "session_id",
-    "toolUseId": "tool_use_id",
+    toolName: "tool_name",
+    toolInput: "tool_input",
+    input: "tool_input",
+    toolOutput: "tool_output",
+    output: "tool_output",
+    sessionId: "session_id",
+    toolUseId: "tool_use_id",
     // Nested field shortcuts: direct field names -> tool_input.xxx
-    "filePath": "tool_input.file_path",
-    "filepath": "tool_input.file_path",
-    "command": "tool_input.command",
-    "content": "tool_input.content",
-    "text": "tool_input.text",
-    "path": "tool_input.path",
-    "file": "tool_input.file",
-    "server": "tool_input.server",
-    "operation": "tool_input.operation",
+    filePath: "tool_input.file_path",
+    filepath: "tool_input.file_path",
+    command: "tool_input.command",
+    content: "tool_input.content",
+    text: "tool_input.text",
+    path: "tool_input.path",
+    file: "tool_input.file",
+    server: "tool_input.server",
+    operation: "tool_input.operation",
   };
 
   // Normalize field name
   let normalizedField = field;
-  
+
   // Check if the entire field name has an alias (e.g., "filePath" -> "tool_input.file_path")
   if (fieldAliases[field]) {
     normalizedField = fieldAliases[field];
@@ -541,7 +580,9 @@ function loadPolicies(): PolicyFile[] {
   const policies: PolicyFile[] = [];
   if (!fs.existsSync(POLICIES_DIR)) return policies;
 
-  const files = fs.readdirSync(POLICIES_DIR).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+  const files = fs
+    .readdirSync(POLICIES_DIR)
+    .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
   for (const file of files) {
     try {
       const content = fs.readFileSync(path.join(POLICIES_DIR, file), "utf-8");
@@ -560,7 +601,9 @@ function loadSemanticRules(): SemanticRule[] {
   const rules: SemanticRule[] = [];
   if (!fs.existsSync(SEMANTIC_DIR)) return rules;
 
-  const files = fs.readdirSync(SEMANTIC_DIR).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+  const files = fs
+    .readdirSync(SEMANTIC_DIR)
+    .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
   for (const file of files) {
     try {
       const content = fs.readFileSync(path.join(SEMANTIC_DIR, file), "utf-8");
@@ -721,7 +764,8 @@ function parseArrayItem(
 
   // It's an object starting on the same line as the dash
   const obj: Record<string, any> = {};
-  obj[kvMatch[1]] = kvMatch[2].trim() === "" ? null : parseYamlValue(kvMatch[2].trim());
+  obj[kvMatch[1]] =
+    kvMatch[2].trim() === "" ? null : parseYamlValue(kvMatch[2].trim());
   i++;
 
   // Continue reading object properties at deeper indent
@@ -770,8 +814,10 @@ function parseYamlValue(value: string): any {
   }
 
   // Quoted string
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1);
   }
 
@@ -790,7 +836,6 @@ function getIndent(line: string): number {
 
 // ─── Trace Writer ─────────────────────────────────────────────────────────────
 
-
 // ─── Post-hook Helpers ──────────────────────────────────────────────────────
 
 function calculateDuration(input: CodexHookInput): number {
@@ -802,35 +847,70 @@ function calculateDuration(input: CodexHookInput): number {
 function extractModifiedFiles(input: CodexHookInput): string[] {
   const files: string[] = [];
   const output = input.tool_output;
-  
+
   if (!output) return files;
-  
+
   // 处理 Write/Edit 工具的输出
-  if (typeof output === 'object' && output !== null) {
+  if (typeof output === "object" && output !== null) {
     const out = output as Record<string, unknown>;
-    if (out.filePath && typeof out.filePath === 'string') {
+    if (out.filePath && typeof out.filePath === "string") {
       files.push(out.filePath);
     }
     if (out.modifiedFiles && Array.isArray(out.modifiedFiles)) {
       files.push(...out.modifiedFiles.map(String));
     }
   }
-  
+
   // 处理 Bash 工具的输出（解析 git diff 等）
-  if (input.tool_name === 'Bash' && typeof output === 'string') {
+  if (input.tool_name === "Bash" && typeof output === "string") {
     const filePattern = /modified:\s+(\S+)/g;
     let match;
     while ((match = filePattern.exec(output)) !== null) {
       files.push(match[1]);
     }
   }
-  
+
   return files;
 }
+/**
+ * Extract MCP server and operation from tool name.
+ * Supports formats:
+ *   - mcp__server__operation (double underscore, Claude Code / Codex)
+ *   - mcp_server_operation (single underscore, Qoder)
+ * Returns null if not an MCP tool.
+ */
+function extractMcpInfo(
+  toolName: string,
+): { mcpServer: string; mcpOperation: string } | null {
+  if (!toolName) return null;
+  // Double underscore format: mcp__server__operation
+  if (toolName.startsWith("mcp__")) {
+    const parts = toolName.split("__");
+    if (parts.length >= 3) {
+      return { mcpServer: parts[1], mcpOperation: parts.slice(2).join("__") };
+    }
+    if (parts.length === 2) {
+      return { mcpServer: parts[1], mcpOperation: "" };
+    }
+  }
+  // Single underscore format: mcp_server_operation (but not mcp__*)
+  if (toolName.startsWith("mcp_") && !toolName.startsWith("mcp__")) {
+    const parts = toolName.split("_");
+    if (parts.length >= 3) {
+      return { mcpServer: parts[1], mcpOperation: parts.slice(2).join("_") };
+    }
+    if (parts.length === 2) {
+      return { mcpServer: parts[1], mcpOperation: "" };
+    }
+  }
+  return null;
+}
+
 function writeTrace(
   event: string,
   input: CodexHookInput,
   result: HookDecision,
+  mcpInfo?: { mcpServer: string; mcpOperation: string } | null,
 ): void {
   const now = new Date();
   const dateStr = now.toISOString().split("T")[0];
@@ -850,6 +930,12 @@ function writeTrace(
     modifiedFiles: result.modifiedFiles,
     exitCode: result.exitCode,
   };
+
+  // Attach MCP-specific fields when this is an MCP call
+  if (mcpInfo) {
+    entry.mcpServer = mcpInfo.mcpServer;
+    entry.mcpOperation = mcpInfo.mcpOperation;
+  }
 
   try {
     fs.appendFileSync(traceFile, JSON.stringify(entry) + "\n", "utf-8");
@@ -921,7 +1007,10 @@ function saveSessionTitle(title: string, agentSessionId: string | null): void {
   }
 }
 
-function writePromptTrace(userMessage: string, agentSessionId: string | null): void {
+function writePromptTrace(
+  userMessage: string,
+  agentSessionId: string | null,
+): void {
   const now = new Date();
   const dateStr = now.toISOString().split("T")[0];
   const traceFile = path.join(TRACES_DIR, `${dateStr}.jsonl`);
@@ -989,10 +1078,14 @@ function ensureDir(dir: string): void {
 
 function priority(d: HookDecision): number {
   switch (d.decision) {
-    case "deny": return 3;
-    case "warn": return 2;
-    case "allow": return 1;
-    default: return 0;
+    case "deny":
+      return 3;
+    case "warn":
+      return 2;
+    case "allow":
+      return 1;
+    default:
+      return 0;
   }
 }
 
@@ -1006,7 +1099,9 @@ function log(...args: unknown[]): void {
 
 main().catch((err) => {
   if (DEBUG) {
-    process.stderr.write(`[codex-handler] Error: ${err.message}\n${err.stack}\n`);
+    process.stderr.write(
+      `[codex-handler] Error: ${err.message}\n${err.stack}\n`,
+    );
   }
   // On error, allow by default (don't block the agent)
   process.exit(0);
