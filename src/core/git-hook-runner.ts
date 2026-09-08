@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "child_process";
-import path from "path";
+import * as path from "path";
 import {
   ArtifactLifecycleManager,
   LifecycleConfig,

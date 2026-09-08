@@ -40,6 +40,7 @@ gitHooks:
       builtin:
         clearArtifacts: true
         archiveBeforeClear: true
+        checkStagedFiles: true
       callbacks: []
     post-commit:
       builtin:
