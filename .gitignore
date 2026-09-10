@@ -21,5 +21,10 @@ test-copilot/
 .trae/
 .cursor/
 
-# Trace files (legacy)
+# Trace & session runtime artifacts
 traces/
+.harness/traces/
+.harness/sessions/
+.harness/archive/
+.harness/hooks/logs/
+.harness/current-session.json

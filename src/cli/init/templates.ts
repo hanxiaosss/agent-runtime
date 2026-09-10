@@ -89,7 +89,7 @@ rules:
         pattern:
           - "src/core/**"
           - "src/kernel/**"
-    action: deny
+    action: warn
     feedback: "Core module files require human review. Changes to core modules need explicit approval."
     suggestions:
       - "Ask for human review before modifying core files"
@@ -512,6 +512,14 @@ export const SEMANTIC_RULES_YAML = `# Semantic Rules — Multi-dimensional hook 
 #   • All specified dimensions must match (AND across dimensions)
 #   • Within a dimension, any pattern can match (OR within dimension)
 #   • At least one dimension must be specified per rule
+#
+# Read-only tools (Read, Grep, Glob, …):
+#   Rules that match ONLY on file_path/file_type (no tool_name, content,
+#   or command constraint) are treated as file-modification protections
+#   and are automatically skipped for read-only tools. Protected files
+#   can always be read — they are only guarded against modification.
+#   To restrict a rule to modify tools explicitly, add:
+#     tool_name: [Write, Edit, MultiEdit, SearchReplace]
 
 rules:
   # Example: block eval() in TypeScript source files
@@ -1100,8 +1108,19 @@ const FILE_MODIFY_TOOLS = new Set([
   "SearchReplace", "write", "edit",
 ]);
 
+// Tools that only read files — must NOT trigger file-path protection rules.
+// Content-based rules (secret detection, XSS, eval) still apply to these.
+const FILE_READ_ONLY_TOOLS = new Set([
+  "Read", "ReadMany", "Grep", "Glob", "Search",
+  "read_file", "list_dir", "list_directory",
+]);
+
 function isFileModifyTool(toolName) {
   return FILE_MODIFY_TOOLS.has(toolName);
+}
+
+function isFileReadOnlyTool(toolName) {
+  return FILE_READ_ONLY_TOOLS.has(toolName);
 }
 
 function isMCPTool(toolName) {
@@ -1331,30 +1350,31 @@ function writeTrace(eventName, payload, action, feedback, agentSessionId) {
 
 const BUILT_IN_RULES = [
   // ── Redline: agent instruction files ──
+  // Only applies to modify tools — these files CAN be read by agents.
   { name: "redline-agent-files", action: "deny",
     feedback: "You cannot modify agent instruction files. These define your behavior and must only be changed by the human user.",
     suggestions: ["Continue without modifying instruction files"],
-    match: { file_path: ["**/agent.md", "**/AGENT.md", "**/.agent.md", "**/agents.md", "**/AGENTS.md", "**/CLAUDE.md", "**/COPILOT.md", "**/.cursorrules", "**/.cursor/rules.md"] } },
+    match: { tool_name: [...FILE_MODIFY_TOOLS], file_path: ["**/agent.md", "**/AGENT.md", "**/.agent.md", "**/agents.md", "**/AGENTS.md", "**/CLAUDE.md", "**/COPILOT.md", "**/.cursorrules", "**/.cursor/rules.md"] } },
   // ── Redline: harness config ──
   { name: "redline-harness-config", action: "deny",
     feedback: "You cannot modify .harness/ configuration. This directory contains runtime guard policies and hooks.",
     suggestions: ["Continue without modifying .harness/ files"],
-    match: { file_path: ["**/.harness/**"] } },
+    match: { tool_name: [...FILE_MODIFY_TOOLS], file_path: ["**/.harness/**"] } },
   // ── Environment files ──
   { name: "env-protection", action: "deny",
     feedback: "Environment files are protected. They may contain secrets and must be edited manually.",
     suggestions: ["Ask the human user to edit .env files"],
-    match: { file_path: ["**/.env", "**/.env.*", "**/*.env"] } },
+    match: { tool_name: [...FILE_MODIFY_TOOLS], file_path: ["**/.env", "**/.env.*", "**/*.env"] } },
   // ── Lock files ──
   { name: "lock-file-protection", action: "deny",
     feedback: "Lock files are auto-generated. Use the package manager instead of editing directly.",
     suggestions: ["Use npm install, pnpm add, yarn add, etc."],
-    match: { file_path: ["**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock", "**/poetry.lock", "**/Gemfile.lock", "**/Cargo.lock", "**/go.sum"] } },
+    match: { tool_name: [...FILE_MODIFY_TOOLS], file_path: ["**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock", "**/poetry.lock", "**/Gemfile.lock", "**/Cargo.lock", "**/go.sum"] } },
   // ── Production config ──
   { name: "production-config", action: "deny",
     feedback: "Production configuration must be changed through the deployment pipeline, not directly.",
     suggestions: ["Modify staging/dev configuration first", "Use CI/CD pipeline for production deployment"],
-    match: { file_path: ["**/production.yaml", "**/production.yml", "**/production.json", "**/production.env", "**/prod.yaml", "**/prod.yml", "**/prod.json", "**/prod.env", "**/production/**", "**/prod/**"] } },
+    match: { tool_name: [...FILE_MODIFY_TOOLS], file_path: ["**/production.yaml", "**/production.yml", "**/production.json", "**/production.env", "**/prod.yaml", "**/prod.yml", "**/prod.json", "**/prod.env", "**/production/**", "**/prod/**"] } },
   // ── Dangerous shell ──
   { name: "dangerous-rm", action: "modify",
     feedback: "Destructive rm commands are blocked.",
@@ -1407,7 +1427,7 @@ const BUILT_IN_RULES = [
   { name: "core-module", action: "warn",
     feedback: "You are modifying core module files. These changes require human review.",
     suggestions: ["Ensure changes are reviewed by a human", "Document the changes thoroughly"],
-    match: { file_path: ["**/src/core/**", "**/src/kernel/**", "**/src/runtime/**"] } },
+    match: { tool_name: [...FILE_MODIFY_TOOLS], file_path: ["**/src/core/**", "**/src/kernel/**", "**/src/runtime/**"] } },
   // ── Bash: env deletion ──
   { name: "bash-env-delete", action: "deny",
     feedback: "Deleting environment files via Bash is not allowed. These files may contain secrets.",
@@ -1556,12 +1576,26 @@ function evaluateSemanticRules(input) {
   let best = null;
   let bestP = Infinity;
 
+  // Read-only tools (Read, Grep, Glob, …) must NOT be blocked by file-path
+  // protection rules — protected files can be read, just not modified.
+  // Content-based rules (secret detection, XSS, eval) still apply.
+  const readOnly = isFileReadOnlyTool(dims.tool_name);
+
   // Merge built-in rules with user-defined rules from semantic-rules/*.yaml
   const allRules = BUILT_IN_RULES.concat(loadSemanticRulesYAML());
   log("Semantic rules:", allRules.length, "total (" + BUILT_IN_RULES.length + " built-in + " + (allRules.length - BUILT_IN_RULES.length) + " YAML)");
 
   for (const rule of allRules) {
     const m = rule.match;
+
+    // ── Skip file-path-only protection rules for read-only tools ──
+    // A "file-path-only" rule is one that matches solely on file_path/file_type
+    // without any tool_name/content/command/mcp constraint. These are meant to
+    // prevent modification, not reading. Content-based checks still apply.
+    if (readOnly && m.file_path && !m.tool_name && !m.content && !m.command && !m.mcp_server && !m.mcp_operation) {
+      continue;
+    }
+
     let matched = 0, total = 0;
 
     if (m.tool_name)    { total++; if (matchDim(m.tool_name, dims.tool_name)) matched++; }
@@ -2085,45 +2119,75 @@ async function main() {
   }
 
 
-  
+
   // Helper: Match semantic rule against input
   function matchSemanticRule(rule, input) {
     const dims = rule.match;
     const toolName = input.tool_name || "";
     const toolInput = input.tool_input || {};
-    
+    const filePath = toolInput.file_path || toolInput.path || toolInput.filePath || "";
+    const content = toolInput.content || "";
+    const command = toolInput.command || "";
+    const fileType = filePath.includes(".") ? filePath.split(".").pop() : "";
+
+    let mcpServer = "", mcpOp = "";
+    if (toolName.startsWith("mcp__")) {
+      const parts = toolName.split("__");
+      if (parts.length >= 3) { mcpServer = parts[1]; mcpOp = parts.slice(2).join("__"); }
+    } else if (toolName.startsWith("mcp_")) {
+      const parts = toolName.split("_");
+      if (parts.length >= 3) { mcpServer = parts[1]; mcpOp = parts.slice(2).join("_"); }
+    }
+
     // Check tool_name
     if (dims.tool_name && dims.tool_name.length > 0) {
       if (!dims.tool_name.some(pattern => matchPattern(toolName, pattern))) {
         return false;
       }
     }
-    
+
     // Check file_path
     if (dims.file_path && dims.file_path.length > 0) {
-      const filePath = toolInput.file_path || "";
       if (!dims.file_path.some(pattern => globMatch(pattern, filePath))) {
         return false;
       }
     }
-    
-    // Check content
+
+    // Check content (also matches against command for flexibility)
     if (dims.content && dims.content.length > 0) {
-      const content = toolInput.content || toolInput.command || "";
-      if (!dims.content.some(pattern => content.includes(pattern))) {
+      if (!dims.content.some(pattern => content.includes(pattern) || command.includes(pattern))) {
         return false;
       }
     }
-    
+
+    // Check command
+    if (dims.command && dims.command.length > 0) {
+      if (!dims.command.some(pattern => command.includes(pattern) || globMatch(pattern, command))) {
+        return false;
+      }
+    }
+
+    // Check mcp_server
+    if (dims.mcp_server && dims.mcp_server.length > 0) {
+      if (!dims.mcp_server.some(pattern => matchPattern(mcpServer, pattern))) {
+        return false;
+      }
+    }
+
+    // Check mcp_operation
+    if (dims.mcp_operation && dims.mcp_operation.length > 0) {
+      if (!dims.mcp_operation.some(pattern => matchPattern(mcpOp, pattern))) {
+        return false;
+      }
+    }
+
     // Check file_type
     if (dims.file_type && dims.file_type.length > 0) {
-      const filePath = toolInput.file_path || "";
-      const ext = path.extname(filePath).slice(1);
-      if (!dims.file_type.includes(ext)) {
+      if (!dims.file_type.includes(fileType)) {
         return false;
       }
     }
-    
+
     return true;
   }
   

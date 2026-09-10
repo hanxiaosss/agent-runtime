@@ -182,6 +182,139 @@ export async function runInit(args: string[]): Promise<void> {
     console.log(`  ✓ .harness/${filePath}`);
   }
 
+  // ── Semantic Analysis: Convert policy rules to semantic dimensions ────────
+  // Analyze policy rules (which use field/pattern format) and convert them
+  // to semantic-rules format (which uses dimensional matching).
+  // This ensures custom redline rules are registered in the semantic engine
+  // and can intercept agent operations via dimension-based matching.
+  console.log("\n  ✓ Analyzing policy rules for semantic registration...");
+  try {
+    const yaml = await import("js-yaml");
+    const policiesDir = path.join(harnessDir, "policies");
+    const policyFiles = fs.readdirSync(policiesDir)
+      .filter(f => f.endsWith(".yaml") || f.endsWith(".yml"));
+
+    const semanticRules: Array<{
+      name: string;
+      description: string;
+      match: Record<string, string[]>;
+      action: string;
+      feedback: string;
+      suggestions: string[];
+    }> = [];
+
+    for (const policyFile of policyFiles) {
+      const policyPath = path.join(policiesDir, policyFile);
+      const content = fs.readFileSync(policyPath, "utf-8");
+      const policy = yaml.load(content) as any;
+
+      if (!policy?.rules || !Array.isArray(policy.rules)) continue;
+
+      for (const rule of policy.rules) {
+        if (!rule?.match || !Array.isArray(rule.match)) continue;
+
+        // Convert policy match conditions to semantic dimensions
+        const match: Record<string, string[]> = {};
+        let hasDimensions = false;
+
+        for (const condition of rule.match) {
+          if (!condition?.field || !condition?.pattern) continue;
+
+          const field = condition.field as string;
+          const patterns = Array.isArray(condition.pattern)
+            ? condition.pattern.map(String)
+            : [String(condition.pattern)];
+
+          // Map policy field paths to semantic dimensions
+          let dim: string | null = null;
+          if (field === "input.file_path" || field === "file_path" || field === "filePath") {
+            dim = "file_path";
+          } else if (field === "input.command" || field === "command") {
+            dim = "command";
+          } else if (field === "input.content" || field === "content") {
+            dim = "content";
+          } else if (field === "input.tool_name" || field === "toolName" || field === "tool_name") {
+            dim = "tool_name";
+          } else if (field === "server") {
+            dim = "mcp_server";
+          } else if (field === "operation") {
+            dim = "mcp_operation";
+          }
+
+          if (dim) {
+            // Merge patterns if dimension already exists (AND within dimension becomes OR)
+            if (match[dim]) {
+              match[dim] = [...match[dim], ...patterns];
+            } else {
+              match[dim] = patterns;
+            }
+            hasDimensions = true;
+          }
+        }
+
+        // ── Honor `when: code.before_modify` ────────────────────────────
+        // Policy rules scoped to "before_modify" should only fire for tools
+        // that actually change files. Without this, a rule like "deny writes
+        // to .env" would also block reading .env — breaking agent comprehension.
+        const when = rule.when as string | undefined;
+        if (when === "code.before_modify" && !match.tool_name) {
+          match.tool_name = [
+            "Write", "Edit", "MultiEdit", "write_file", "edit_file",
+            "create_file", "SearchReplace", "write", "edit",
+          ];
+        }
+
+        if (hasDimensions) {
+          semanticRules.push({
+            name: rule.id || rule.name || `${policy.name || "policy"}-rule`,
+            description: rule.reason || rule.description || "",
+            match,
+            action: rule.action || "warn",
+            feedback: rule.feedback || rule.reason || "",
+            suggestions: Array.isArray(rule.suggestions) ? rule.suggestions.map(String) : [],
+          });
+        }
+      }
+    }
+
+    if (semanticRules.length > 0) {
+      // Write converted rules to semantic-rules/from-policies.yaml
+      const yamlLines: string[] = [
+        "# Auto-generated from policy rules — semantic dimension mapping",
+        "# These rules are converted from policies/*.yaml for dimensional matching",
+        "# Do not edit manually — regenerate with: hannah init",
+        "",
+        "rules:",
+      ];
+
+      for (const r of semanticRules) {
+        yamlLines.push(`  - name: ${JSON.stringify(r.name)}`);
+        if (r.description) yamlLines.push(`    description: ${JSON.stringify(r.description)}`);
+        yamlLines.push(`    match:`);
+        for (const [dim, patterns] of Object.entries(r.match)) {
+          yamlLines.push(`      ${dim}: [${patterns.map(p => JSON.stringify(p)).join(", ")}]`);
+        }
+        yamlLines.push(`    action: ${r.action}`);
+        yamlLines.push(`    feedback: ${JSON.stringify(r.feedback)}`);
+        if (r.suggestions.length > 0) {
+          yamlLines.push(`    suggestions: [${r.suggestions.map(s => JSON.stringify(s)).join(", ")}]`);
+        }
+      }
+
+      fs.writeFileSync(
+        path.join(harnessDir, "semantic-rules", "from-policies.yaml"),
+        yamlLines.join("\n") + "\n",
+        "utf-8"
+      );
+      console.log(`    ├─ ${semanticRules.length} rules converted to semantic dimensions`);
+      console.log(`    └─ Written to semantic-rules/from-policies.yaml`);
+    } else {
+      console.log(`    └─ No convertible policy rules found`);
+    }
+  } catch (err: any) {
+    console.log(`    ⚠ Policy-to-semantic conversion skipped: ${err.message}`);
+  }
+
   // Generate agent-specific configuration
   console.log(`\n  ✓ Generating ${selectedAgent.name} configuration...`);
   selectedAgent.generateConfig(targetDir);
@@ -331,6 +464,59 @@ export async function runInit(args: string[]): Promise<void> {
       console.log("     code --install-extension editors/vscode/agent-runtime-trace-0.2.0.vsix");
       console.log("     Then open Secondary Sidebar (Ctrl+Shift+P \u2192 'View: Show Secondary Sidebar')");
     }
+  }
+
+  // ── Ensure .gitignore covers trace & session runtime artifacts ────────────
+  // These files are generated at runtime by the handler/hooks and should never
+  // be committed. We add explicit entries (not just `.harness/`) so that even
+  // if a project chooses to track parts of .harness/ (e.g. policies/), the
+  // ephemeral trace/session artifacts remain ignored.
+  const gitignorePath = path.join(targetDir, ".gitignore");
+  try {
+    const RUNTIME_IGNORE_PATTERNS = [
+      { pattern: ".harness/traces/", comment: "Trace event logs (JSONL)" },
+      { pattern: ".harness/sessions/", comment: "Session metadata (JSON)" },
+      { pattern: ".harness/archive/", comment: "Archived session data" },
+      { pattern: ".harness/hooks/logs/", comment: "Hook execution logs" },
+      { pattern: ".harness/current-session.json", comment: "Current session pointer" },
+    ];
+
+    let existing = "";
+    if (fs.existsSync(gitignorePath)) {
+      existing = fs.readFileSync(gitignorePath, "utf-8");
+    } else {
+      console.log("\n  ✓ Creating .gitignore...");
+    }
+
+    const existingLines = existing.split(/\r?\n/).map(l => l.trim());
+    const added: string[] = [];
+
+    for (const { pattern, comment } of RUNTIME_IGNORE_PATTERNS) {
+      // Skip if pattern (or a broader parent) is already present
+      if (existingLines.some(line => {
+        if (!line || line.startsWith("#")) return false;
+        return line === pattern || line === pattern.slice(0, -1) || line === ".harness/" || line === ".harness";
+      })) {
+        continue;
+      }
+      if (!existing.endsWith("\n") && existing.length > 0) {
+        existing += "\n";
+      }
+      existing += `${pattern}  # ${comment}\n`;
+      added.push(pattern);
+    }
+
+    if (added.length > 0) {
+      fs.writeFileSync(gitignorePath, existing, "utf-8");
+      console.log(`  ✓ Updated .gitignore (+${added.length} pattern(s)):`);
+      for (const p of added) {
+        console.log(`    ├─ ${p}`);
+      }
+    } else {
+      console.log("  ✓ .gitignore already covers runtime artifacts");
+    }
+  } catch (err: any) {
+    console.log(`  ⚠ .gitignore update skipped: ${err.message}`);
   }
 
   // Git hooks installation
