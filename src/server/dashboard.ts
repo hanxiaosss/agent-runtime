@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as http from "node:http";
 import { exec, execSync } from "node:child_process";
+import { analyzeFeedbackEffectiveness } from "../intelligence/feedback-effectiveness.js";
 
 /**
  * Kill the process occupying a given port (cross-platform).
@@ -102,6 +103,8 @@ export function runWeb(args: string[]): void {
       handleSessions(res, tracesDir);
     } else if (url.pathname === "/api/rounds") {
       handleRounds(res, tracesDir);
+    } else if (url.pathname === "/api/feedback-effectiveness") {
+      handleFeedbackEffectiveness(res, tracesDir);
     } else if (url.pathname === "/events") {
       handleSSE(res, tracesDir);
     } else {
@@ -426,6 +429,31 @@ function handleRounds(res: http.ServerResponse, tracesDir: string): void {
   res.end(JSON.stringify({ rounds, count: rounds.length }));
 }
 
+function handleFeedbackEffectiveness(
+  res: http.ServerResponse,
+  tracesDir: string,
+): void {
+  const entries = loadRecentTraces(tracesDir, 10000);
+  const metadata = loadSessionMetadata(tracesDir);
+  const rounds = detectRounds(entries, metadata);
+
+  // Convert dashboard rounds to the format expected by the analyzer
+  const roundBounds = rounds.map((r) => ({
+    roundId: r.roundId,
+    sessionId: r.sessionId,
+    startTime: r.startTime,
+    endTime: r.endTime,
+  }));
+
+  const report = analyzeFeedbackEffectiveness(entries, roundBounds);
+
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify(report));
+}
+
 function handleSSE(res: http.ServerResponse, tracesDir: string): void {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -600,6 +628,49 @@ function getDashboardHTML(): string {
   tr.prompt-row td { font-size: 12px; }
   .prompt-text { color: #c9d1d9; font-style: italic; max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
   .round-title-full { display: block; font-size: 12px; color: #8b949e; font-weight: 400; margin-top: 2px; max-width: 600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Round separation & breathing room */
+  tr.round-row td { padding: 14px 16px; }
+  tr.round-row:nth-child(4n+1) { background: #161b22; }
+  tr.round-row:nth-child(4n+3) { background: #131920; }
+  tr.round-row:hover { background: #1c2128; }
+  tr.round-detail td { padding: 0; }
+  .round-events { padding: 20px 24px; }
+  .round-events table { border-spacing: 0; }
+  .round-events th { padding: 10px 14px; }
+  .round-events td { padding: 10px 14px; }
+  .round-events tbody tr:hover { background: #161b22; }
+  .session-content { padding: 4px 20px 20px; }
+  .session-content > table { margin-top: 4px; }
+  /* Feedback Effectiveness Section */
+  .feedback-section { padding: 0 24px 24px; }
+  .feedback-section h2 { font-size: 15px; margin-bottom: 12px; color: #c9d1d9; }
+  .feedback-overview { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .feedback-bar-container { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .feedback-bar { flex: 1; height: 24px; background: #21262d; border-radius: 12px; overflow: hidden; position: relative; }
+  .feedback-bar-fill { height: 100%; border-radius: 12px; transition: width 0.5s ease; }
+  .feedback-bar-fill.good { background: linear-gradient(90deg, #238636, #3fb950); }
+  .feedback-bar-fill.fair { background: linear-gradient(90deg, #9e6a03, #d29922); }
+  .feedback-bar-fill.poor { background: linear-gradient(90deg, #da3633, #f85149); }
+  .feedback-rate { font-size: 20px; font-weight: 700; min-width: 60px; text-align: right; }
+  .feedback-rate.good { color: #3fb950; }
+  .feedback-rate.fair { color: #d29922; }
+  .feedback-rate.poor { color: #f85149; }
+  .feedback-summary { font-size: 12px; color: #8b949e; margin-top: 6px; }
+  .feedback-empty { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; text-align: center; color: #8b949e; font-size: 13px; }
+  .feedback-rules-table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+  .feedback-rules-table th { text-align: left; padding: 10px 16px; background: #1c2128; font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .feedback-rules-table td { padding: 10px 16px; border-top: 1px solid #21262d; font-size: 13px; }
+  .rating-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
+  .rating-dot.good { background: #3fb950; }
+  .rating-dot.fair { background: #d29922; }
+  .rating-dot.poor { background: #f85149; }
+  .feedback-cases { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px 20px; }
+  .feedback-cases h3 { font-size: 13px; color: #c9d1d9; margin-bottom: 10px; }
+  .feedback-case-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; font-size: 12px; color: #8b949e; border-bottom: 1px solid #21262d; }
+  .feedback-case-item:last-child { border-bottom: none; }
+  .feedback-case-item .case-time { color: #58a6ff; min-width: 60px; }
+  .feedback-case-item .case-event { color: #c9d1d9; }
+  .feedback-case-item .case-target { color: #8b949e; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -627,6 +698,13 @@ function getDashboardHTML(): string {
     </div>
   </div>
 
+  <div class="feedback-section">
+    <h2>Feedback Effectiveness</h2>
+    <div id="feedback-content">
+      <div class="feedback-empty">Loading feedback analysis...</div>
+    </div>
+  </div>
+
   <div class="section">
     <h2>Sessions</h2>
     <table>
@@ -649,6 +727,14 @@ function formatDuration(ms) {
   return h + 'h ' + (m % 60) + 'm';
 }
 
+// ── Expansion state — preserved across re-renders ─────────────────────
+const expandedSessions = new Set();
+const expandedRounds = new Set();
+// Cache of loaded rounds data per session (so we don't re-fetch on re-render)
+const sessionRoundsCache = new Map();
+// Signature of last rendered session list to skip no-op re-renders
+let lastSessionsSignature = '';
+
 async function loadStats() {
   const res = await fetch('/api/stats');
   const data = await res.json();
@@ -662,16 +748,26 @@ async function loadSessions() {
   const res = await fetch('/api/sessions');
   const data = await res.json();
   const tbody = document.getElementById('sessions-table');
+
+  // Compute a signature to detect if data changed.
+  // If nothing changed, skip the DOM rebuild entirely — this is what
+  // was destroying expansion state on every SSE / polling tick.
+  const sig = data.sessions.map(s => s.id + ':' + s.eventCount + ':' + s.lastSeen + ':' + s.rounds.length).join('|');
+  if (sig === lastSessionsSignature) return;
+  lastSessionsSignature = sig;
+
   tbody.innerHTML = '';
 
   for (const s of data.sessions) {
+    const isExpanded = expandedSessions.has(s.id);
+
     // Main session row
     const tr = document.createElement('tr');
-    tr.className = 'session-row';
+    tr.className = 'session-row' + (isExpanded ? ' expanded' : '');
     const time = new Date(s.lastSeen).toLocaleTimeString();
     const roundCount = s.rounds.length;
     tr.innerHTML =
-      '<td><span class="toggle-arrow" id="arrow-' + s.id + '">&#9654;</span></td>' +
+      '<td><span class="toggle-arrow' + (isExpanded ? ' open' : '') + '" id="arrow-' + s.id + '">&#9654;</span></td>' +
       '<td><div class="session-name" title="' + escapeHtml(s.name) + '">' + s.name + '</div><div class="session-meta">' + s.id + '</div></td>' +
       '<td>' + s.eventCount + '</td>' +
       '<td><span class="rounds-count">' + roundCount + ' rounds</span></td>' +
@@ -680,9 +776,9 @@ async function loadSessions() {
 
     // Detail row (rounds within this session)
     const detailTr = document.createElement('tr');
-    detailTr.className = 'session-detail';
+    detailTr.className = 'session-detail' + (isExpanded ? ' open' : '');
     detailTr.id = 'detail-' + s.id;
-    detailTr.innerHTML = '<td colspan="6"><div class="session-content" id="rounds-' + s.id + '">Loading...</div></td>';
+    detailTr.innerHTML = '<td colspan="6"><div class="session-content" id="rounds-' + s.id + '">' + (isExpanded ? 'Loading...' : '') + '</div></td>';
 
     tr.addEventListener('click', function() {
       const detail = document.getElementById('detail-' + s.id);
@@ -690,18 +786,33 @@ async function loadSessions() {
       const isOpen = detail.classList.contains('open');
       detail.classList.toggle('open');
       arrow.classList.toggle('open');
-      if (!isOpen && detail.querySelector('.session-content').textContent === 'Loading...') {
-        loadSessionRounds(s.id, s.rounds);
+      if (isOpen) {
+        expandedSessions.delete(s.id);
+      } else {
+        expandedSessions.add(s.id);
+        if (detail.querySelector('.session-content').textContent === 'Loading...') {
+          loadSessionRounds(s.id, s.rounds);
+        }
       }
     });
 
     tbody.appendChild(tr);
     tbody.appendChild(detailTr);
+
+    // If this session was previously expanded and we have cached rounds, re-render them
+    if (isExpanded && sessionRoundsCache.has(s.id)) {
+      loadSessionRounds(s.id, sessionRoundsCache.get(s.id));
+    }
   }
 }
 
 async function loadSessionRounds(sessionId, rounds) {
+  // Cache rounds for this session so re-renders can restore state
+  sessionRoundsCache.set(sessionId, rounds);
+
   const container = document.getElementById('rounds-' + sessionId);
+  if (!container) return;
+
   let html = '<table><thead><tr><th style="width:30px"></th><th>Round</th><th>Events</th><th>Stats</th><th>Time Range</th></tr></thead><tbody>';
 
   for (const r of rounds) {
@@ -713,8 +824,10 @@ async function loadSessionRounds(sessionId, rounds) {
       (r.warnedCount > 0 ? '<span class="mini-warned">' + r.warnedCount + ' warned</span>' : '') +
       '</span>';
 
-    html += '<tr class="round-row" data-round-id="' + r.roundId + '">' +
-      '<td><span class="toggle-arrow" id="arrow-' + r.roundId + '">&#9654;</span></td>' +
+    const isRoundExpanded = expandedRounds.has(r.roundId);
+
+    html += '<tr class="round-row' + (isRoundExpanded ? ' expanded' : '') + '" data-round-id="' + r.roundId + '">' +
+      '<td><span class="toggle-arrow' + (isRoundExpanded ? ' open' : '') + '" id="arrow-' + r.roundId + '">&#9654;</span></td>' +
       '<td><span class="round-num">#' + r.roundNumber + '</span><span class="round-title">' + r.title + '</span>' +
       (r.title.length >= 100 ? '<span class="round-title-full" title="' + escapeHtml(r.title) + '">' + escapeHtml(r.title) + '</span>' : '') +
       '</td>' +
@@ -723,8 +836,8 @@ async function loadSessionRounds(sessionId, rounds) {
       '<td><span class="time-range">' + startTime + ' → ' + endTime + ' (' + formatDuration(r.duration) + ')</span></td>' +
       '</tr>';
 
-    html += '<tr class="round-detail" id="detail-' + r.roundId + '">' +
-      '<td colspan="5"><div class="round-events" id="events-' + r.roundId + '">Loading...</div></td>' +
+    html += '<tr class="round-detail' + (isRoundExpanded ? ' open' : '') + '" id="detail-' + r.roundId + '">' +
+      '<td colspan="5"><div class="round-events" id="events-' + r.roundId + '">' + (isRoundExpanded ? 'Loading...' : '') + '</div></td>' +
       '</tr>';
   }
 
@@ -742,9 +855,14 @@ async function loadSessionRounds(sessionId, rounds) {
       const isOpen = detail.classList.contains('open');
       detail.classList.toggle('open');
       arrow.classList.toggle('open');
-      if (!isOpen && detail.querySelector('.round-events').textContent === 'Loading...') {
-        const round = rounds.find(r => r.roundId === roundId);
-        loadRoundEvents(roundId, round ? round.startTime : null, round ? round.endTime : null);
+      if (isOpen) {
+        expandedRounds.delete(roundId);
+      } else {
+        expandedRounds.add(roundId);
+        if (detail.querySelector('.round-events').textContent === 'Loading...') {
+          const round = rounds.find(r => r.roundId === roundId);
+          loadRoundEvents(roundId, round ? round.startTime : null, round ? round.endTime : null);
+        }
       }
     });
   });
@@ -856,17 +974,93 @@ function escapeHtml(str) {
 
 
 
+// ── Feedback Effectiveness ──────────────────────────────────────────
+
+async function loadFeedbackEffectiveness() {
+  const container = document.getElementById('feedback-content');
+  try {
+    const res = await fetch('/api/feedback-effectiveness');
+    const data = await res.json();
+
+    if (data.insufficientData || data.totalFeedbackEvents === 0) {
+      container.innerHTML = '<div class="feedback-empty">' +
+        (data.totalFeedbackEvents === 0
+          ? 'No feedback events recorded yet. Hook deny/warn events with feedback messages will be analyzed here.'
+          : 'Insufficient feedback data for analysis. Need at least 2 feedback events.') +
+        '</div>';
+      return;
+    }
+
+    const pct = Math.round(data.overallRate * 100);
+    const rating = pct >= 70 ? 'good' : pct >= 40 ? 'fair' : 'poor';
+
+    let html = '';
+
+    // Overview bar
+    html += '<div class="feedback-overview">';
+    html += '<div class="feedback-bar-container">';
+    html += '<div class="feedback-bar"><div class="feedback-bar-fill ' + rating + '" style="width:' + pct + '%"></div></div>';
+    html += '<div class="feedback-rate ' + rating + '">' + pct + '%</div>';
+    html += '</div>';
+    html += '<div class="feedback-summary">' + data.effectiveCount + ' of ' + data.totalFeedbackEvents + ' feedback events led to behavior correction</div>';
+    html += '</div>';
+
+    // Per-rule table
+    if (data.byRule && data.byRule.length > 0) {
+      html += '<table class="feedback-rules-table"><thead><tr>';
+      html += '<th>Rule</th><th style="text-align:center">Total</th><th style="text-align:center">Effective</th><th style="text-align:center">Rate</th>';
+      html += '</tr></thead><tbody>';
+      for (const r of data.byRule) {
+        const rPct = Math.round(r.effectivenessRate * 100);
+        const ruleName = r.rule.replace(/^semantic\./, '');
+        html += '<tr>';
+        html += '<td><span class="rating-dot ' + r.rating + '"></span>' + escapeHtml(ruleName) + '</td>';
+        html += '<td style="text-align:center">' + r.totalFeedback + '</td>';
+        html += '<td style="text-align:center">' + r.effective + '</td>';
+        html += '<td style="text-align:center;color:' + (r.rating === 'good' ? '#3fb950' : r.rating === 'fair' ? '#d29922' : '#f85149') + '">' + rPct + '%</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+
+    // Recent ineffective cases
+    const ineffectiveCases = data.cases.filter(function(c) { return c.repeated; }).slice(0, 5);
+    if (ineffectiveCases.length > 0) {
+      html += '<div class="feedback-cases">';
+      html += '<h3>Recent Ineffective Cases (agent repeated violation)</h3>';
+      for (const c of ineffectiveCases) {
+        const time = new Date(c.feedbackEvent.timestamp).toLocaleTimeString();
+        const ruleName = c.feedbackEvent.event.replace(/^semantic\./, '');
+        const target = c.feedbackEvent.target || '';
+        html += '<div class="feedback-case-item">';
+        html += '<span class="case-time">' + time + '</span>';
+        html += '<span class="case-event">' + escapeHtml(ruleName) + '</span>';
+        html += '<span class="case-target" title="' + escapeHtml(target) + '">' + escapeHtml(target) + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<div class="feedback-empty">Failed to load feedback analysis.</div>';
+  }
+}
+
 // SSE for live updates
 const evtSource = new EventSource('/events');
 evtSource.addEventListener('trace', function(e) {
   loadStats();
   loadSessions();
+  loadFeedbackEffectiveness();
 });
 
 loadStats();
 loadSessions();
+loadFeedbackEffectiveness();
 setInterval(loadStats, 10000);
 setInterval(loadSessions, 15000);
+setInterval(loadFeedbackEffectiveness, 20000);
 </script>
 </body>
 </html>`;
